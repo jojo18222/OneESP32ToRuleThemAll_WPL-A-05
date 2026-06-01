@@ -1,16 +1,16 @@
 esphome:
-  name: esp32-poe-technik
-  friendly_name: ESP32-PoE Technik
+  name: esp32-isg
+  friendly_name: ESP32-ISG
 
 esp32:
-  board: esp32-poe
+  board: esp32-s3-devkitc-1
   framework:
     type: esp-idf
 
 # Enable logging
 logger:
   level: VERBOSE
-  initial_level: INFO
+  initial_level: NONE
   baud_rate: 0
   hardware_uart: UART1
 select:
@@ -18,37 +18,28 @@ select:
     name: "Log level"
 
 # Enable Home Assistant API
-api:
-  encryption:
-    key: !secret api_encryption_key
+#api:
+#  encryption:
+#    key: !secret api_encryption_key
 
 ota:
   platform: esphome
-  password: !secret ota_password
+#  password: !secret ota_password
 
 substitutions:
-  entity_room_temperature: "sensor.durchschnittstemperatur_haus_ohne_keller"
-  entity_humidity: "sensor.durchschnitt_luftfeuchtigkeit_haus"
   timezone: "Europe/Berlin"
-  #can_bus_bit_rate: 50kbps
-  #espclient_can_id: 0x6a2
+  can_bus_bit_rate: 50kbps
+  #espclient_can_id: 0x680 # normal can id if not emulate FET
+  espclient_can_id: 0x401 # this is the can id of the org. FET, needed to change RAUMISTTEMP and RAUMFEUCHTE
+  emulate_fet: "true" # if true, esp32 sends parameter like the org. FET
+  api_reboot_timeout: 0s # default: 15min, set 0s if not using api
 
 external_components:
   - source:
       type: local
       path: OneESP32ToRuleThemAll/components
-    components: ["wp_core", "wp_climate", "sml_reader"]
+    components: ["wp_core"]
 
-#########################################
-#                                       #
-#   SPI configuration                   #
-#                                       #
-#########################################
-spi:
-  id: McpSpi
-  clk_pin: GPIO14
-  mosi_pin: GPIO13
-  miso_pin: GPIO4
 
 #########################################
 #                                       #
@@ -57,21 +48,12 @@ spi:
 #########################################
 canbus:
   - id: !extend wp_can
-    platform: mcp2515
-    spi_id: McpSpi
-    cs_pin: GPIO15
-    clock: 8MHz        # 8MHz or 16MHz depending on the value of the crystal on your MCP2515
-    data_rate: 4MHz    # 8Mhz (4MHz, 2MHz or 1MHz in case you get CAN bus errors)
-
-# Waveshare Industrial ESP32-S3 Control Board
-#canbus:
-#  - id: !extend wp_can
-#    platform: esp32_can
-#    tx_pin: GPIO15
-#    rx_pin: GPIO16
-#    bit_rate: 20kbps
-#    rx_queue_len: 512  # Default: 8, increased for high-traffic CAN bus
-#    tx_queue_len: 64   # Default: 16, increased for burst writes
+    platform: esp32_can
+    tx_pin: GPIO15
+    rx_pin: GPIO16
+    bit_rate: 50kbps
+    rx_queue_len: 512  # Default: 8, increased for high-traffic CAN bus
+    tx_queue_len: 64   # Default: 16, increased for burst writes
 
 #########################################
 #                                       #
@@ -87,29 +69,56 @@ button:
 #   WiFi Configuration                  #
 #                                       #
 #########################################
-#wifi:
-#  ssid: !secret wifi_ssid
-#  password: !secret wifi_password
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "test_AP"
+    password: "fallbackpass"
+  min_auth_mode: WPA2
 
-# Enable fallback hotspot (captive portal) in case wifi connection fails
-#  ap:
-#    ssid: "ESP32-PoE Fallback Hotspot"
-#    password: !secret fallback_password
+captive_portal:
 
-#########################################
-#                                       #
-#   Ethernet Konfiguration              #
-#                                       #
-#########################################
-ethernet:
-  type: LAN8720
-  mdc_pin: GPIO23
-  mdio_pin: GPIO18
-  clk:
-    pin: GPIO0
-    mode: CLK_OUT
-  phy_addr: 0
-  power_pin: GPIO12
+web_server:
+  port: 80
+  version: 3
+  log: False
+  sorting_groups:
+    - id: group_betriebsstatus
+      name: "Betriebsstatus"
+      sorting_weight: 10
+    - id: group_statuswp
+      name: "Status Wärmepumpe"
+      sorting_weight: 20
+    - id: group_temps
+      name: "Temperaturen"
+      sorting_weight: 30
+    - id: group_heizen
+      name: "Heizen"
+      sorting_weight: 40
+    - id: group_ww
+      name: "Warmwasser"
+      sorting_weight: 50
+    - id: group_kuehlen
+      name: "Kühlen"
+      sorting_weight: 60
+    - id: group_statistik
+      name: "Statistik"
+      sorting_weight: 70
+    - id: group_verdichter
+      name: "Verdichter"
+      sorting_weight: 80
+    - id: group_default
+      name: "Allgemein"
+      sorting_weight: 90
+
+# MQTT-Einstellungen
+mqtt:
+  broker: !secret mqtt_broker
+  port: 1883
+  username: !secret mqtt_username
+  password: !secret mqtt_password
+
 
 #########################################
 #                                       #
@@ -119,11 +128,12 @@ ethernet:
 packages:
 # thz304: !include OneESP32ToRuleThemAll/yaml/thz304.yaml
 # thz404: !include OneESP32ToRuleThemAll/yaml/thz404.yaml
-  thz504: !include OneESP32ToRuleThemAll/yaml/thz504.yaml
+#  thz504: !include OneESP32ToRuleThemAll/yaml/thz504.yaml
 # thz55eco: !include OneESP32ToRuleThemAll/yaml/thz5_5_eco.yaml
 # ttf07: !include OneESP32ToRuleThemAll/yaml/ttf07.yaml
 # wpl13: !include OneESP32ToRuleThemAll/yaml/wpl13.yaml
-# wpl17: !include OneESP32ToRuleThemAll/yaml/wpl17.yaml
+#  wpl17: !include OneESP32ToRuleThemAll/yaml/wpl17.yaml
+  wpla5: !include OneESP32ToRuleThemAll/yaml/wpl_a_5.yaml
 # wpl23: !include OneESP32ToRuleThemAll/yaml/wpl23.yaml
 # energymeter: !include OneESP32ToRuleThemAll/yaml/features/energymeter.yaml
 # evu: !include OneESP32ToRuleThemAll/yaml/features/evu.yaml

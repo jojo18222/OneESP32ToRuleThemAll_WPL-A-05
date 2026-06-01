@@ -2,12 +2,13 @@ defaults:
   icon: "mdi:blank"
   accuracy_decimals: "0"
   target: "Kessel"
-  update_interval: "never"
+  update_interval: $interval_slow
   unit: ""
   scaler: "1.0"
   name_suffix: ""
   exposed: "true"
   state_class: "measurement"
+  group: group_default
 
 sensor:
   - platform: template
@@ -18,6 +19,8 @@ sensor:
     accuracy_decimals: ${accuracy_decimals}
     update_interval: ${update_interval}
     state_class: ${state_class}
+    web_server:
+      sorting_group_id: ${group}
     lambda: |-
         queueRequest(CanNode::${target}, Property::k${property});
         return {};

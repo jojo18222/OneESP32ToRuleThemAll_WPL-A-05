@@ -1,10 +1,11 @@
 defaults:
-  update_interval: $interval_very_slow
+  update_interval: $interval_slow
   target: "Kessel"
   writable: "false"
   name_suffix: ""
   unit: "°C"
   exposed: "true"
+  group: group_default
 
 sensor:
   - platform: template
@@ -16,6 +17,8 @@ sensor:
     state_class: "measurement"
     accuracy_decimals: 1
     update_interval: ${update_interval}
+    web_server:
+      sorting_group_id: ${group}
     lambda: |-
         queueRequest(CanNode::${target}, Property::k${property});
         return {};

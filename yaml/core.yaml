@@ -49,45 +49,7 @@ time:
         days_of_week: SUN
         then:
           - lambda: |-
-              syncTime(homeassistant_time);
-
-#########################################
-#                                       #
-#   Home Assistant Sensors              #
-#                                       #
-#########################################
-sensor:
-  - platform: homeassistant
-    name: Temperature Sensor From Home Assistant
-    id: ha_temperature_sensor
-    entity_id: $entity_room_temperature
-    filters:
-      - heartbeat:
-          period: $interval_medium
-          optimistic: true
-    on_value:
-      then:
-        - lambda: |-
-            if (x > 0.0f) {
-              ESP_LOGI("SET", "Sending room temperature %f to heatpump", x);
-              queueTransmission(CanNode::HK1, Property::kRAUMISTTEMP, static_cast<std::uint16_t>(x * 10.0f));
-            }
-
-  - platform: homeassistant
-    name: Humidity Sensor From Home Assistant
-    id: ha_humidity_sensor
-    entity_id: $entity_humidity
-    filters:
-      - heartbeat:
-          period: $interval_medium
-          optimistic: true
-    on_value:
-      then:
-        - lambda: |-
-            if (x > 0.0f) {
-              ESP_LOGI("SET", "Sending humidity %f to heatpump", x);
-              queueTransmission(CanNode::HK1, Property::kRAUMFEUCHTE, static_cast<std::uint16_t>(x * 10.0f));
-            }
+              //syncTime(homeassistant_time);
 
 #########################################
 #                                       #
@@ -97,10 +59,11 @@ sensor:
 button:
   - platform: template
     name: Synchronize Time
+    internal: True
     on_press:
       then:
         - lambda: |-
-            syncTime(homeassistant_time);
+            //syncTime(homeassistant_time);
 
 #########################################
 #                                       #
@@ -167,6 +130,7 @@ canbus:
 #                                       #
 #########################################
 api:
+  reboot_timeout: ${api_reboot_timeout} #0s
   actions:
     - action: can_send_raw_data
       variables:
@@ -222,5 +186,8 @@ packages:
   HK1:       !include { file: templates/wp_can_id.yaml, vars: { can_node: "HK1"      , can_id: "0x301" }}
   HK2:       !include { file: templates/wp_can_id.yaml, vars: { can_node: "HK2"      , can_id: "0x302" }}
   HEIZMODUL: !include { file: templates/wp_can_id.yaml, vars: { can_node: "Heizmodul", can_id: "0x6a1" }}
-  FET:       !include { file: templates/wp_can_id.yaml, vars: { can_node: "FET"      , can_id: "0x402" }}
+  FET:       !include { file: templates/wp_can_id.yaml, vars: { can_node: "FET"      , can_id: "0x401" }}
   MFG:       !include { file: templates/wp_can_id.yaml, vars: { can_node: "MFG"      , can_id: "0x700" }}
+  WW:        !include { file: templates/wp_can_id.yaml, vars: { can_node: "WW"       , can_id: "0x201" }}
+  FES:       !include { file: templates/wp_can_id.yaml, vars: { can_node: "FES"      , can_id: "0x100" }}
+  TBD:       !include { file: templates/wp_can_id.yaml, vars: { can_node: "TBD"      , can_id: "0x4a0" }}

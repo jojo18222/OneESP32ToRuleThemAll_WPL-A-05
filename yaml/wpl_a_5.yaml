@@ -1,0 +1,512 @@
+#########################################
+#                                       #
+#   Substitutions                       #
+#                                       #
+#########################################
+substitutions:
+  can_bus_bit_rate: 50kbps
+
+#########################################
+#                                       #
+#   CAN Bus                             #
+#                                       #
+#########################################
+canbus:
+  - id: !extend wp_can
+    bit_rate: $can_bus_bit_rate
+
+#########################################
+#                                       #
+#   ESPHome Base Setup                  #
+#                                       #
+#########################################
+esphome:
+  platformio_options:
+    build_flags:
+      - "-DWPL_A_5"
+  on_boot:
+    - priority: -50
+      then:
+        - lambda: |-
+            CallbackHandler::instance().addCallback(std::make_pair(CanNode::Manager,Property::kBETRIEBS_STATUS),[](const SimpleVariant& value){
+              const std::bitset<12U> status_bits{static_cast<std::uint16_t>(value)};
+              id(HEIZKREISPUMPE_1).publish_state(status_bits.test(0U));
+              id(HEIZKREISPUMPE_2).publish_state(status_bits.test(1U));
+              id(Aufheizprogramm).publish_state(status_bits.test(2U));
+              id(NHZStufenInBertieb).publish_state(status_bits.test(3U));
+              id(WPImHeizbetrieb).publish_state(status_bits.test(4U));
+              id(WPImWarmwasserbetrieb).publish_state(status_bits.test(5U));
+              id(VerdichterInBetrieb).publish_state(status_bits.test(6U));
+              id(SommerbetriebAktiv).publish_state(status_bits.test(7U));
+              id(KuehlbetriebAktiv).publish_state(status_bits.test(8U));
+              id(AbtaubetriebMin1IWS).publish_state(status_bits.test(9U));
+              id(Silentmode1Aktiv).publish_state(status_bits.test(10U));
+              id(Silentmode2Aktiv).publish_state(status_bits.test(11U));
+            });
+    - priority: -51
+      then:
+        - lambda: |-
+            CallbackHandler::instance().addCallback(std::make_pair(CanNode::FES,Property::kHEARTBEAT),[](const SimpleVariant& value){
+              const auto heartbeat = static_cast<std::uint16_t>(value);
+              ESP_LOGI("REQ", "received fet heartbeat %d", heartbeat);
+              sendData(wp_can, CanNode::Manager, Property::kHEARTBEAT, static_cast<std::uint16_t>(heartbeat), false);
+            });
+    - priority: -100
+      then:
+        - lambda: |-
+            queueRequest(CanNode::Manager, Property::kBETRIEBS_STATUS);
+
+    - priority: -101
+      then:
+      - if:
+            condition:
+              lambda: |-
+                return ${emulate_fet};
+            then:
+            - delay: 15s
+            - lambda: |-
+                sendData(wp_can, CanNode::TBD, Property::kFET_BOARDCAST, static_cast<std::uint16_t>(0U), false, 0xFE);
+            - delay: 7s
+            - lambda: |-
+                sendData(wp_can, CanNode::Manager, Property::kFET_INIT, static_cast<std::uint16_t>(1U), false);
+            - delay: 100ms
+            - lambda: |-
+                sendData(wp_can, CanNode::TBD, Property::kFET_BOARDCAST, static_cast<std::uint16_t>(0U), false, 0xFE);
+            - delay: 100ms
+            - lambda: |-
+                sendData(wp_can, CanNode::Manager, Property::kFET_SOFTWARE, static_cast<std::uint16_t>(501U), false);
+            - delay: 100ms
+            - lambda: |-
+                sendData(wp_can, CanNode::Manager, Property::kFET_SOFTWARESTAND, static_cast<std::uint16_t>(2U), false);
+            - delay: 100ms
+            - lambda: |-
+                sendData(wp_can, CanNode::Manager, Property::kFET_REVISIONSNUMMER, static_cast<std::uint16_t>(3U), false);
+            - delay: 1s
+            - lambda: |-
+                sendData(wp_can, CanNode::Manager, Property::kFET_SOFTWARE, static_cast<std::uint16_t>(501U), false);
+            - delay: 100ms
+            - lambda: |-
+                sendData(wp_can, CanNode::Manager, Property::kFET_SOFTWARESTAND, static_cast<std::uint16_t>(2U), false);
+            - delay: 100ms
+            - lambda: |-
+                sendData(wp_can, CanNode::Manager, Property::kFET_REVISIONSNUMMER, static_cast<std::uint16_t>(3U), false);
+
+
+interval:
+  - interval: $interval_medium
+    then:
+        - lambda: |-
+            queueRequest(CanNode::Manager, Property::kBETRIEBS_STATUS);
+
+  - interval: $interval_medium
+    then:
+        - lambda: |-
+            uint8_t val = 1;
+            //queueTransmission(CanNode::Manager, Property::kHEARTBEAT, static_cast<std::uint16_t>(val));
+            //sendData(wp_can, CanNode::Manager, Property::kHEARTBEAT, static_cast<std::uint16_t>(val), false);
+
+  - interval: $interval_medium
+    then:
+      - lambda: |-
+          // Wir senden den aktuellen Wert der Number-Entität noch einmal auf den Bus
+          float temp = id(external_temperature_sensor).state;
+          if (temp > 0.0f) {
+              temp = round(temp * 10.0f)/10.0f;
+              ESP_LOGI("SET", "Sending room temperature %f to heatpump", temp);
+              queueTransmission(CanNode::HK1, Property::kRAUMISTTEMP, static_cast<std::uint16_t>(temp * 10.0f));
+          }
+
+          float humidity = id(external_humidity_sensor).state;
+          if (humidity > 0.0f) {
+              humidity = round(humidity * 10.0f)/10.0f;
+              ESP_LOGI("SET", "Sending humidity %f to heatpump", humidity);
+              queueTransmission(CanNode::HK1, Property::kRAUMFEUCHTE, static_cast<std::uint16_t>(humidity * 10.0f));
+            }
+
+
+#########################################
+#                                       #
+#   Packages                            #
+#                                       #
+#########################################
+packages:
+  CORE:                                  !include { file: core.yaml }
+  MANAGER:                               !include { file: templates/wp_can_id.yaml, vars: { can_node: "Manager" , can_id: "0x480" }}
+
+  HEIZKREISPUMPE_1:                      !include { file: templates/wp_binary.yaml, vars: { name: "HEIZKREISPUMPE_1", group: group_betriebsstatus }}
+  HEIZKREISPUMPE_2:                      !include { file: templates/wp_binary.yaml, vars: { name: "HEIZKREISPUMPE_2", group: group_betriebsstatus }}
+  Aufheizprogramm:                       !include { file: templates/wp_binary.yaml, vars: { name: "Aufheizprogramm", group: group_betriebsstatus }}
+  NHZStufenInBertieb:                    !include { file: templates/wp_binary.yaml, vars: { name: "NHZStufenInBertieb", group: group_betriebsstatus }}
+  WPImHeizbetrieb:                       !include { file: templates/wp_binary.yaml, vars: { name: "WPImHeizbetrieb", group: group_betriebsstatus }}
+  WPImWarmwasserbetrieb:                 !include { file: templates/wp_binary.yaml, vars: { name: "WPImWarmwasserbetrieb", group: group_betriebsstatus }}
+  VerdichterInBetrieb:                   !include { file: templates/wp_binary.yaml, vars: { name: "VerdichterInBetrieb", group: group_betriebsstatus }}
+  SommerbetriebAktiv:                    !include { file: templates/wp_binary.yaml, vars: { name: "SommerbetriebAktiv", group: group_betriebsstatus }}
+  KuehlbetriebAktiv:                     !include { file: templates/wp_binary.yaml, vars: { name: "KuehlbetriebAktiv", group: group_betriebsstatus }}
+  AbtaubetriebMin1IWS:                   !include { file: templates/wp_binary.yaml, vars: { name: "AbtaubetriebMin1IWS", group: group_betriebsstatus }}
+  Silentmode1Aktiv:                      !include { file: templates/wp_binary.yaml, vars: { name: "Silentmode1Aktiv", group: group_betriebsstatus }}
+  Silentmode2Aktiv:                      !include { file: templates/wp_binary.yaml, vars: { name: "Silentmode2Aktiv", group: group_betriebsstatus }}
+  
+  EVU_SPERRE:                            !include { file: templates/wp_binary.yaml, vars: { name: "EVU_SPERRE", property: "EVU_SPERRE", target: "Manager", group: group_betriebsstatus }}
+  #EVU_SPERRE:                            !include { file: templates/wp_generic.yaml, vars: { property: "EVU_SPERRE", target: "Manager", group: group_betriebsstatus }}
+
+  ISTTEMPERATUR_HK1:                     !include { file: templates/wp_temperature.yaml, vars: { property: "ISTTEMPERATUR"     , name_suffix: "_HK1" , target: "HK1", group: group_heizen  }}
+  SOLLTEMPERATUR_HK1:                    !include { file: templates/wp_temperature.yaml, vars: { property: "SOLLTEMPERATUR"    , name_suffix: "_HK1" , target: "HK1", group: group_heizen  }}
+  
+  KOMFORTTEMPERATUR_HK1:                 !include { file: templates/wp_number.yaml, vars: { property: "KOMFORTTEMPERATUR", name_suffix: "_HK1", target: "HK1", min: "5", max: "30", step: "0.1", accuracy_decimals: "1", unit: "°C", group: group_heizen }}
+  ECOTEMPERATUR_HK1:                     !include { file: templates/wp_number.yaml, vars: { property: "ECOTEMPERATUR", name_suffix: "_HK1", target: "HK1", min: "5", max: "30", step: "0.1", accuracy_decimals: "1", unit: "°C", group: group_heizen }}
+
+  #ISTTEMPERATUR_HK2:                     !include { file: templates/wp_temperature.yaml, vars: { property: "ISTTEMPERATUR"     , name_suffix: "_HK2" , target: "HK2", group: group_heizen  }}
+  #SOLLTEMPERATUR_HK2:                    !include { file: templates/wp_temperature.yaml, vars: { property: "SOLLTEMPERATUR"    , name_suffix: "_HK2" , target: "HK2", group: group_heizen  }}
+  
+  #KOMFORTTEMPERATUR_HK2:                 !include { file: templates/wp_number.yaml, vars: { property: "KOMFORTTEMPERATUR", name_suffix: "_HK2", target: "HK2", min: "5", max: "30", step: "0.1", accuracy_decimals: "1", unit: "°C", group: group_heizen }}
+  #ECOTEMPERATUR_HK2:                     !include { file: templates/wp_number.yaml, vars: { property: "ECOTEMPERATUR", name_suffix: "_HK2", target: "HK2", min: "5", max: "30", step: "0.1", accuracy_decimals: "1", unit: "°C", group: group_heizen }}
+  
+  #RAUMISTTEMP:                           !include { file: templates/wp_temperature.yaml, vars: { property: "RAUMISTTEMP"       , target: "FET", group: group_temps  }}
+  RAUMISTTEMP:                           !include { file: templates/wp_temperature.yaml, vars: { property: "RAUMISTTEMP"       , target: "HK1", group: group_temps  }}
+  
+  #RAUMSOLLTEMP:                          !include { file: templates/wp_temperature.yaml, vars: { property: "RAUMSOLLTEMP"      , target: "FET", group: group_temps  }}
+  RAUMSOLLTEMP:                          !include { file: templates/wp_temperature.yaml, vars: { property: "RAUMSOLLTEMP"      , target: "HK1", group: group_temps  }}
+  PUFFERISTTEMPERATUR:                   !include { file: templates/wp_temperature.yaml, vars: { property: "PUFFERISTTEMPERATUR" }}
+  FROSTSCHUTZ:                           !include { file: templates/wp_temperature.yaml, vars: { property: "FROSTSCHUTZ"       , target: "MFG"  }}
+  #VORLAUFTEMP_QUELLE:                    !include { file: templates/wp_temperature.yaml, vars: { property: "VORLAUFTEMP_QUELLE" , target: "Heizmodul"  }}
+  #RUECKLAUFTEMP_QUELLE:                  !include { file: templates/wp_temperature.yaml, vars: { property: "RUECKLAUFTEMP_QUELLE" , target: "Heizmodul"  }}
+  VORLAUFISTTEMP:                        !include { file: templates/wp_temperature.yaml, vars: { property: "VORLAUFISTTEMP"     , update_interval: $interval_medium, target: "MFG"  }}
+  VORLAUFSOLLTEMP:                       !include { file: templates/wp_temperature.yaml, vars: { property: "VORLAUFSOLLTEMP"    , target: "HK1"  }}
+  VERDAMPFERTEMP:                        !include { file: templates/wp_temperature.yaml, vars: { property: "VERDAMPFERTEMP"     , target: "Heizmodul"  }}
+  #RUECKLAUFISTTEMP:                      !include { file: templates/wp_temperature.yaml, vars: { property: "RUECKLAUFISTTEMP"   , update_interval: $interval_medium , target: "MFG" }}
+  
+  #MAXVORLAUFTEMP:                        !include { file: templates/wp_temperature.yaml, vars: { property: "MAXVORLAUFTEMP"     , target: "Kessel"  }}
+  MAXVORLAUFTEMP:                    !include { file: templates/wp_number.yaml, vars: { property: "MAXVORLAUFTEMP", min: "20", max: "80", step: "0.1", accuracy_decimals: "1", unit: "°C", target: "Kessel", group: group_heizen  }}
+  #MAXRUECKLAUFTEMP:                      !include { file: templates/wp_temperature.yaml, vars: { property: "MAXRUECKLAUFTEMP"   , target: "Kessel"  }}
+  MAXRUECKLAUFTEMP:                    !include { file: templates/wp_number.yaml, vars: { property: "MAXRUECKLAUFTEMP", min: "20", max: "65", step: "0.1", accuracy_decimals: "1", unit: "°C", target: "Kessel", group: group_heizen  }}
+
+
+  AUSSENTEMP:                            !include { file: templates/wp_temperature.yaml, vars: { property: "AUSSENTEMP"         , update_interval: $interval_medium , target: "Kessel", group: group_temps }}
+  HEISSGAS_TEMP:                         !include { file: templates/wp_temperature.yaml, vars: { property: "HEISSGAS_TEMP"      , update_interval: $interval_medium , target: "Heizmodul", group: group_statuswp }}
+  VORLAUFTEMP:                           !include { file: templates/wp_temperature.yaml, vars: { property: "VORLAUFTEMP"        , update_interval: $interval_medium , target: "Heizmodul", group: group_statuswp }}
+  VERFLUESSIGER_TEMP:                    !include { file: templates/wp_temperature.yaml, vars: { property: "VERFLUESSIGER_TEMP" , update_interval: $interval_medium , target: "Heizmodul", group: group_statuswp }}
+  OELSUMPFTEMP:                          !include { file: templates/wp_temperature.yaml, vars: { property: "OELSUMPFTEMP"       , update_interval: $interval_medium , target: "Heizmodul", group: group_statuswp }}
+  VORLAUFISTTEMP_WP:                     !include { file: templates/wp_temperature.yaml, vars: { property: "VORLAUFISTTEMP_WP"  , update_interval: $interval_medium , target: "Kessel", group: group_statuswp }}
+  RUECKLAUFISTTEMP_WP:                   !include { file: templates/wp_temperature.yaml, vars: { property: "RUECKLAUFISTTEMP_WP", update_interval: $interval_medium , target: "Kessel", group: group_statuswp }}
+  RUECKLAUFTEMP:                         !include { file: templates/wp_temperature.yaml, vars: { property: "RUECKLAUFTEMP"      , update_interval: $interval_medium , target: "Heizmodul", group: group_statuswp }}
+  KUEHLEN_SOLLTEMP:                      !include { file: templates/wp_temperature.yaml, vars: { property: "KUEHLEN_SOLLTEMP"   , update_interval: $interval_medium , target: "Kessel", group: group_kuehlen }}
+  KUEHLEN_ISTTEMP:                       !include { file: templates/wp_temperature.yaml, vars: { property: "KUEHLEN_ISTTEMP"    , update_interval: $interval_medium , target: "Kessel", group: group_kuehlen }}
+  #ISTTEMPERATUR_KK_2:                    !include { file: templates/wp_temperature.yaml, vars: { property: "ISTTEMPERATUR_KK_2" , update_interval: $interval_medium , target: "HK2" }}
+  #SOLLTEMPERATUR_KK_2:                   !include { file: templates/wp_temperature.yaml, vars: { property: "SOLLTEMPERATUR_KK_2", update_interval: $interval_medium , target: "HK2" }}
+  #ANLAGEFROST:                           !include { file: templates/wp_temperature.yaml, vars: { property: "ANLAGEFROST"        , update_interval: $interval_medium , target: "Kessel" }}
+  ANLAGEFROST:                    !include { file: templates/wp_number.yaml, vars: { property: "ANLAGEFROST", min: "-10", max: "10", step: "0.1", accuracy_decimals: "1", unit: "°C", target: "Kessel", group: group_heizen  }}
+  VORLAUFISTTEMP_NHZ:                    !include { file: templates/wp_temperature.yaml, vars: { property: "VORLAUFISTTEMP_NHZ" , update_interval: $interval_medium , target: "Kessel", group: group_statuswp }}
+  
+  #STARTTEMPERATUR:                       !include { file: templates/wp_temperature.yaml, vars: { property: "STARTTEMPERATUR"              , target: "HK1"  }}
+  VERDICHTER_EINTRITTSTEMP:              !include { file: templates/wp_temperature.yaml, vars: { property: "VERDICHTER_EINTRITTSTEMP", target: "Heizmodul", group: group_statuswp  }}
+  TAUPUNKTTEMP:                          !include { file: templates/wp_temperature.yaml, vars: { property: "TAUPUNKTTEMP", target: "HK1", group: group_temps  }}
+ 
+  #BIVALENZTEMPERATUR_HZG:                !include { file: templates/wp_temperature.yaml, vars: { property: "BIVALENZTEMPERATUR_HZG", target: "Kessel"  }}
+  BIVALENZTEMPERATUR_HZG:                    !include { file: templates/wp_number.yaml, vars: { property: "BIVALENZTEMPERATUR_HZG", min: "-20", max: "40", step: "0.1", accuracy_decimals: "1", unit: "°C", target: "Kessel", group: group_heizen  }}
+  
+  UMGEBUNGSTEMPERATUR_INVERTER:          !include { file: templates/wp_temperature.yaml, vars: { property: "UMGEBUNGSTEMPERATUR_INVERTER" , target: "Heizmodul", group: group_statuswp  }}
+  UNTERK_COND:                           !include { file: templates/wp_temperature.yaml, vars: { property: "UNTERK_COND" , target: "Heizmodul", group: group_statuswp  }}
+  TEMPERATUR_INV_VERDICHTER:             !include { file: templates/wp_temperature.yaml, vars: { property: "TEMPERATUR_INV_VERDICHTER" , target: "Heizmodul", group: group_statuswp  }}
+  IST_UEBERHITZUNG_SAUGGAS_VERDICHTER:   !include { file: templates/wp_temperature.yaml, vars: { property: "IST_UEBERHITZUNG_SAUGGAS_VERDICHTER", target: "Heizmodul", unit: "°K" , group: group_statuswp }}
+  SOLL_UEBERHITZUNG_SAUGGAS_VERDICHTER:  !include { file: templates/wp_temperature.yaml, vars: { property: "SOLL_UEBERHITZUNG_SAUGGAS_VERDICHTER", target: "Heizmodul", unit: "°K" , group: group_statuswp }}
+  ADAPTION_UEBERHITZUNG:                 !include { file: templates/wp_temperature.yaml, vars: { property: "ADAPTION_UEBERHITZUNG", target: "Heizmodul", unit: "°K" , group: group_statuswp }}
+  MINTEMP:                               !include { file: templates/wp_temperature.yaml, vars: { property: "MINTEMP"            , target: "HK1"  }}
+  MAXTEMP:                               !include { file: templates/wp_temperature.yaml, vars: { property: "MAXTEMP"            , target: "HK1"  }}
+
+  #EL_NACHERW_VERZ_ZEIT:                  !include { file: templates/wp_generic.yaml, vars: { property: "EL_NACHERW_VERZ_ZEIT", unit: "min"   , target: "Kessel"  }}
+  EL_NACHERW_VERZ_ZEIT:                    !include { file: templates/wp_number.yaml, vars: { property: "EL_NACHERW_VERZ_ZEIT", min: "1", max: "60", step: "1", accuracy_decimals: "0", unit: "min", target: "Kessel", group: group_heizen  }}
+  #EL_NACHERW_ANZ_STUFEN:                 !include { file: templates/wp_generic.yaml, vars: { property: "EL_NACHERW_ANZ_STUFEN", target: "Kessel"  }}
+  EL_NACHERW_ANZ_STUFEN:                    !include { file: templates/wp_number.yaml, vars: { property: "EL_NACHERW_ANZ_STUFEN", min: "0", max: "3", step: "1", accuracy_decimals: "0", target: "Kessel", group: group_heizen  }}
+  
+  ISTDREHZAHL_VERDICHTER:                !include { file: templates/wp_generic.yaml, vars: { property: "ISTDREHZAHL_VERDICHTER" , unit: "Hz", target: "Heizmodul", group: group_statuswp  }}
+  SOLLDREHZAHL_VERDICHTER:               !include { file: templates/wp_generic.yaml, vars: { property: "SOLLDREHZAHL_VERDICHTER", unit: "Hz", target: "Heizmodul", group: group_statuswp  }}
+  
+  LAUFZEIT_PASSIVKUEHLUNG:               !include { file: templates/wp_generic.yaml, vars: { property: "LAUFZEIT_PASSIVKUEHLUNG", scaler: "10", unit: "h", target: "Heizmodul"  }}
+  #RAUMFEUCHTE:                           !include { file: templates/wp_generic.yaml, vars: { property: "RAUMFEUCHTE" , update_interval: $interval_slow, unit: "%", icon: "mdi:water-percent", accuracy_decimals: "1", target: "FET", group: group_temps  }}
+  RAUMFEUCHTE:                           !include { file: templates/wp_generic.yaml, vars: { property: "RAUMFEUCHTE" , update_interval: $interval_slow, unit: "%", icon: "mdi:water-percent", accuracy_decimals: "1", target: "HK1", group: group_temps  }}
+  HEIZEN_EFFIZIENZ_TAG:                  !include { file: templates/wp_generic.yaml, vars: { property: "HEIZEN_EFFIZIENZ_TAG"  , target: "Manager", accuracy_decimals: "2" }}
+  HEIZEN_EFFIZIENZ_JAHR:                 !include { file: templates/wp_generic.yaml, vars: { property: "HEIZEN_EFFIZIENZ_JAHR" , target: "Manager", accuracy_decimals: "2" }}
+  DRUCK_NIEDERDRUCK:                     !include { file: templates/wp_generic.yaml, vars: { property: "DRUCK_NIEDERDRUCK"     , unit: "bar"  , icon: "mdi:water-pressure", scaler: "0.1" , accuracy_decimals: "2", target: "Heizmodul", group: group_statuswp  }}
+  DRUCK_HOCHDRUCK:                       !include { file: templates/wp_generic.yaml, vars: { property: "DRUCK_HOCHDRUCK"       , unit: "bar"  , icon: "mdi:water-pressure", scaler: "0.1" , accuracy_decimals: "2", target: "Heizmodul", group: group_statuswp  }}
+  HEIZUNGSDRUCK:                         !include { file: templates/wp_generic.yaml, vars: { property: "HEIZUNGSDRUCK"         , unit: "bar"  , icon: "mdi:water-pressure" , accuracy_decimals: "2", target: "Kessel", group: group_statuswp  }}
+  #QUELLENDRUCK:                          !include { file: templates/wp_generic.yaml, vars: { property: "QUELLENDRUCK"          , unit: "bar"  , icon: "mdi:water-pressure" , accuracy_decimals: "1", target: "Heizmodul", group: group_statuswp  }}
+  #LEISTUNG_QUELLENPUMPE:                 !include { file: templates/wp_generic.yaml, vars: { property: "LEISTUNG_QUELLENPUMPE" , unit: "%"    , icon: "mdi:water-percent", accuracy_decimals: "1", target: "Heizmodul"  }}
+  VOLUMENSTROM:                          !include { file: templates/wp_generic.yaml, vars: { property: "VOLUMENSTROM"          , unit: "l/min", icon: "mdi:flow"           , accuracy_decimals: "2", target: "Kessel", group: group_statuswp  }}
+  STROM_INVERTER:                        !include { file: templates/wp_generic.yaml, vars: { property: "STROM_INVERTER"        , unit: "A"    , target: "Heizmodul"          , accuracy_decimals: "1", group: group_statuswp  }}
+  SPANNUNG_INVERTER:                     !include { file: templates/wp_generic.yaml, vars: { property: "SPANNUNG_INVERTER"     , unit: "V"    , target: "Heizmodul"          , accuracy_decimals: "1", group: group_statuswp  }}
+  ZEITINTERVALL:                         !include { file: templates/wp_generic.yaml, vars: { property: "ZEITINTERVALL", scaler: "10", target: "Manager", group: group_statuswp }}
+  STROM_MOTOR:                           !include { file: templates/wp_generic.yaml, vars: { property: "STROM_MOTOR"     , unit: "A"    , target: "Heizmodul"          , accuracy_decimals: "1", group: group_statuswp  }}
+  VERDICHTERDREHZAHLGRENZE:              !include { file: templates/wp_generic.yaml, vars: { property: "VERDICHTERDREHZAHLGRENZE", target: "Heizmodul", group: group_statuswp  }}
+  
+  STEIGUNG_HEIZKURVE_HK1:                !include { file: templates/wp_number.yaml, vars:  { property: "STEIGUNG_HEIZKURVE"    , icon: "mdi:valve", target: "HK1", name_suffix: "_HK1", min: "0", max: "5.0", step: "0.01", group: group_heizen }}
+
+  #STEIGUNG_HEIZKURVE_HK2:                !include { file: templates/wp_number.yaml, vars:  { property: "STEIGUNG_HEIZKURVE"    , icon: "mdi:valve", target: "HK2", name_suffix: "_HK2", min: "0", max: "5.0", step: "0.01", group: group_heizen }}
+  #MISCHERDYNAMIK:                        !include { file: templates/wp_generic.yaml, vars: { property: "MISCHERDYNAMIK", target: "HK2" }}
+
+  RAUMEINFLUSS:                          !include { file: templates/wp_number.yaml, vars: { property: "RAUMEINFLUSS", target: "HK1", unit: "%", min: "0", max: "100", step: 5,  group: group_heizen }}
+
+  VERDICHTER_STARTS:                     !include { file: templates/wp_generic_combined.yaml, vars: { sensor_name: "VERDICHTER_STARTS"           , scaled_property: "VERDICHTER_STARTS_K"       , property: "VERDICHTER_STARTS"         , unit: ""   , accuracy_decimals: "0", scaler: "1000", icon: "mdi:counter" , target: "Heizmodul", state_class: "total_increasing", group: group_statistik }}
+  WAERMEERTRAG_WW_SUMME_MWH:             !include { file: templates/wp_generic_combined.yaml, vars: { sensor_name: "WAERMEERTRAG_WW_SUMME_MWH"   , scaled_property: "WAERMEERTRAG_WW_SUM_KWH"   , property: "WAERMEERTRAG_WW_SUM_MWH"   , unit: "MWh", accuracy_decimals: "3", icon: "mdi:fire" , target: "Heizmodul", state_class: "total_increasing", group: group_statistik }}
+  WAERMEERTRAG_HEIZ_SUMME_MWH:           !include { file: templates/wp_generic_combined.yaml, vars: { sensor_name: "WAERMEERTRAG_HEIZ_SUMME_MWH" , scaled_property: "WAERMEERTRAG_HEIZ_SUM_KWH" , property: "WAERMEERTRAG_HEIZ_SUM_MWH" , unit: "MWh", accuracy_decimals: "3", icon: "mdi:fire" , target: "Heizmodul", state_class: "total_increasing", group: group_statistik }}
+  EL_ENERGIEAUFNAHME_WW_SUMME_KWH:       !include { file: templates/wp_generic_combined.yaml, vars: { sensor_name: "EL_ENERGIEAUFNAHME_WW_SUMME_KWH"   , scaled_property: "EL_ENERGIEAUFNAHME_WW_SUM_MWH"   , property: "EL_ENERGIEAUFNAHME_WW_SUM_KWH"   , unit: "kWh", accuracy_decimals: "0", scaler: "1000", icon: "mdi:flash", target: "Heizmodul", state_class: "total_increasing", group: group_statistik }}
+  EL_ENERGIEAUFNAHME_HEIZ_SUMME_KWH:     !include { file: templates/wp_generic_combined.yaml, vars: { sensor_name: "EL_ENERGIEAUFNAHME_HEIZ_SUMME_KWH" , scaled_property: "EL_ENERGIEAUFNAHME_HEIZ_SUM_MWH" , property: "EL_ENERGIEAUFNAHME_HEIZ_SUM_KWH" , unit: "kWh", accuracy_decimals: "0", scaler: "1000", icon: "mdi:flash", target: "Heizmodul", state_class: "total_increasing", group: group_statistik }}
+
+  EL_ENERGIEAUFNAHME_WW_NHZ_SUMME_KWH:       !include { file: templates/wp_generic_combined.yaml, vars: { sensor_name: "EL_ENERGIEAUFNAHME_WW_NHZ_SUMME_KWH"   , scaled_property: "EL_ENERGIEAUFNAHME_WW_NHZ_SUM_MWH"   , property: "EL_ENERGIEAUFNAHME_WW_NHZ_SUM_KWH"   , unit: "kWh", accuracy_decimals: "0", scaler: "1000", icon: "mdi:flash", target: "Heizmodul", state_class: "total_increasing", group: group_statistik }}
+  EL_ENERGIEAUFNAHME_HEIZ_NHZ_SUMME_KWH:     !include { file: templates/wp_generic_combined.yaml, vars: { sensor_name: "EL_ENERGIEAUFNAHME_HEIZ_NHZ_SUMME_KWH" , scaled_property: "EL_ENERGIEAUFNAHME_HEIZ_NHZ_SUM_MWH" , property: "EL_ENERGIEAUFNAHME_HEIZ_NHZ_SUM_KWH" , unit: "kWh", accuracy_decimals: "0", scaler: "1000", icon: "mdi:flash", target: "Heizmodul", state_class: "total_increasing", group: group_statistik }}
+
+  EL_ENERGIEAUFNAHME_WW_TAG_SUMME_KWH:   !include { file: templates/wp_daily_energy_combined.yaml, vars: { sensor_name: "EL_ENERGIEAUFNAHME_WW_TAG_SUMME_KWH"   , property_wh: "EL_ENERGIEAUFNAHME_WW_TAG_WH"   , property_kwh: "EL_ENERGIEAUFNAHME_WW_TAG_KWH"   , target: "Heizmodul", group: group_statistik }}
+  EL_ENERGIEAUFNAHME_HEIZ_TAG_SUMME_KWH: !include { file: templates/wp_daily_energy_combined.yaml, vars: { sensor_name: "EL_ENERGIEAUFNAHME_HEIZ_TAG_SUMME_KWH" , property_wh: "EL_ENERGIEAUFNAHME_HEIZ_TAG_WH" , property_kwh: "EL_ENERGIEAUFNAHME_HEIZ_TAG_KWH" , target: "Heizmodul", group: group_statistik }}
+  WAERMEERTRAG_WW_TAG_SUMME_KWH:         !include { file: templates/wp_daily_energy_combined.yaml, vars: { sensor_name: "WAERMEERTRAG_WW_TAG_SUMME_KWH"     , property_wh: "WAERMEERTRAG_WW_TAG_WH"         , property_kwh: "WAERMEERTRAG_WW_TAG_KWH"         , target: "Heizmodul", group: group_statistik }}
+  WAERMEERTRAG_HEIZ_TAG_SUMME_KWH:       !include { file: templates/wp_daily_energy_combined.yaml, vars: { sensor_name: "WAERMEERTRAG_HEIZ_TAG_SUMME_KWH"   , property_wh: "WAERMEERTRAG_HEIZ_TAG_WH"       , property_kwh: "WAERMEERTRAG_HEIZ_TAG_KWH"       , target: "Heizmodul", group: group_statistik }}
+
+  HEATPUMP_DATETIME:                     !include { file: templates/wp_datetime.yaml, vars: { group: group_statuswp } }
+
+  PROGRAMMSCHALTER:                      !include { file: templates/wp_select.yaml, vars: { property: PROGRAMMSCHALTER, target: "Manager", mapper_func_set: getBetriebsartId, mapper_func_get: getBetriebsart, options: ["NOTBETRIEB", "BEREITSCHAFTSBETRIEB", "PROGRAMMBETRIEB", "KOMFORTBETRIEB", "ECO-BETRIEB", "WARMWASSERBETRIEB", "Unbekannt"], group: group_betriebsstatus }}
+
+## From wpa_base
+  WP_WASSERVOLUMENSTROM:        !include { file: templates/wp_generic.yaml, vars: { property: "WP_WASSERVOLUMENSTROM", unit: "l/min", icon: "mdi:water", accuracy_decimals: "1", target: "Heizmodul", group: group_statuswp }}
+  #FET_ECO:                      !include { file: templates/wp_generic.yaml, vars: { property: "FET_ECO", target: "HK1" }}
+  LUEFTERLEISTUNG_REL:          !include { file: templates/wp_generic.yaml, vars: { property: "LUEFTERLEISTUNG_REL", unit: "%", icon: "mdi:fan", target: "Heizmodul", group: group_statuswp }}
+  SOLLDREHZAHL_LUEFTER:         !include { file: templates/wp_generic.yaml, vars: { property: "SOLLDREHZAHL_LUEFTER", unit: "Hz", icon: "mdi:fan", target: "Heizmodul", group: group_statuswp }}
+  ISTDREHZAHL_LUEFTER:          !include { file: templates/wp_generic.yaml, vars: { property: "ISTDREHZAHL_LUEFTER", unit: "Hz", icon: "mdi:fan", target: "Heizmodul", group: group_statuswp }}
+  LAUFZEIT_VD_HEIZEN:           !include { file: templates/wp_generic.yaml, vars: { property: "LAUFZEIT_VD_HEIZEN", unit: "h", target: "Heizmodul", group: group_statistik }}
+  LAUFZEIT_VD_WW:               !include { file: templates/wp_generic.yaml, vars: { property: "LAUFZEIT_VD_WW", unit: "h", target: "Heizmodul", group: group_statistik }}
+  LAUFZEIT_VD_KUEHLEN:          !include { file: templates/wp_generic.yaml, vars: { property: "LAUFZEIT_VD_KUEHLEN", unit: "h", target: "Heizmodul", group: group_statistik }}
+  LAUFZEIT_VD_ABTAUEN:          !include { file: templates/wp_generic.yaml, vars: { property: "LAUFZEIT_VD_ABTAUEN", unit: "h", target: "Heizmodul", group: group_statistik }}
+  LAUFZEIT_NHZ1:                !include { file: templates/wp_generic.yaml, vars: { property: "LAUFZEIT_NHZ1", unit: "h", target: "Heizmodul", group: group_statistik }}
+  LAUFZEIT_NHZ2:                !include { file: templates/wp_generic.yaml, vars: { property: "LAUFZEIT_NHZ2", unit: "h", target: "Heizmodul", group: group_statistik }}
+  LAUFZEIT_NHZ1_2:              !include { file: templates/wp_generic.yaml, vars: { property: "LAUFZEIT_NHZ1_2", unit: "h", target: "Heizmodul", group: group_statistik }}
+  ZEIT_ABTAUEN:                 !include { file: templates/wp_generic.yaml, vars: { property: "ZEIT_ABTAUEN", unit: "min", target: "Heizmodul", group: group_statuswp }}
+  STARTS_ABTAUEN:               !include { file: templates/wp_generic.yaml, vars: { property: "STARTS_ABTAUEN", target: "Heizmodul", group: group_statistik }}
+  P_FAKTOR:                     !include { file: templates/wp_generic.yaml, vars: { property: "P_FAKTOR", target: "Heizmodul", group: group_statuswp }}
+  I_FAKTOR:                     !include { file: templates/wp_generic.yaml, vars: { property: "I_FAKTOR", target: "Heizmodul", group: group_statuswp }}
+  D_FAKTOR:                     !include { file: templates/wp_generic.yaml, vars: { property: "D_FAKTOR", target: "Heizmodul", group: group_statuswp }}
+  VORSTEUER_OEFFNUNGSGRAD_EXV:  !include { file: templates/wp_generic.yaml, vars: { property: "VORSTEUER_OEFFNUNGSGRAD_EXV", unit: "%", target: "Heizmodul", group: group_statuswp }}
+  OEFFNUNGSGRAD_EXV:            !include { file: templates/wp_generic.yaml, vars: { property: "OEFFNUNGSGRAD_EXV", unit: "%", target: "Heizmodul", group: group_statuswp }}
+  OEFFNUNGSGRAD_BYPASSVENT:     !include { file: templates/wp_generic.yaml, vars: { property: "OEFFNUNGSGRAD_BYPASSVENT", unit: "%", target: "Heizmodul", group: group_statuswp }}
+  EINGESCHALTETE_STUFEN:        !include { file: templates/wp_generic.yaml, vars: { property: "EINGESCHALTETE_STUFEN", target: "Manager", group: group_statuswp }}
+  MELDUNGSLISTE:                !include { file: templates/wp_generic.yaml, vars: { property: "MELDUNGSLISTE", target: "Kessel", group: group_statuswp }}
+  # RELAIS_X_2_3:                 !include { file: templates/wp_generic.yaml, vars: { property: "RELAIS_X_2_3", target: "Kessel" }}
+  # RELAIS_X_2_4:                 !include { file: templates/wp_generic.yaml, vars: { property: "RELAIS_X_2_4", target: "Kessel" }}
+  # RELAIS_X_2_5:                 !include { file: templates/wp_generic.yaml, vars: { property: "RELAIS_X_2_5", target: "Kessel" }}
+  # RELAIS_X_2_6:                 !include { file: templates/wp_generic.yaml, vars: { property: "RELAIS_X_2_6", target: "Kessel" }}
+  # RELAIS_X_2_7:                 !include { file: templates/wp_generic.yaml, vars: { property: "RELAIS_X_2_7", target: "Kessel" }}
+  # RELAIS_X_2_8:                 !include { file: templates/wp_generic.yaml, vars: { property: "RELAIS_X_2_8", target: "Kessel" }}
+  # RELAIS_X_2_9:                 !include { file: templates/wp_generic.yaml, vars: { property: "RELAIS_X_2_9", target: "Kessel" }}
+  # RELAIS_X_2_10:                !include { file: templates/wp_generic.yaml, vars: { property: "RELAIS_X_2_10", target: "Kessel" }}
+  # RELAIS_X_2_11:                !include { file: templates/wp_generic.yaml, vars: { property: "RELAIS_X_2_11", target: "Kessel" }}
+  # RELAIS_X_2_12:                !include { file: templates/wp_generic.yaml, vars: { property: "RELAIS_X_2_12", target: "Kessel" }}
+  # RELAIS_X_2_13:                !include { file: templates/wp_generic.yaml, vars: { property: "RELAIS_X_2_13", target: "Kessel" }}
+  # RELAIS_X_2_14_1:              !include { file: templates/wp_generic.yaml, vars: { property: "RELAIS_X_2_14_1", target: "Kessel" }}
+  # RELAIS_X_2_14_2:              !include { file: templates/wp_generic.yaml, vars: { property: "RELAIS_X_2_14_2", target: "Kessel" }}
+  # RELAIS_X_2_15_1:              !include { file: templates/wp_generic.yaml, vars: { property: "RELAIS_X_2_15_1", target: "Kessel" }}
+  # RELAIS_X_2_15_2:              !include { file: templates/wp_generic.yaml, vars: { property: "RELAIS_X_2_15_2", target: "Kessel" }}
+  #ENTLEERUNG_HYD_1:             !include { file: templates/wp_generic.yaml, vars: { property: "ENTLEERUNG_HYD_1", target: "Kessel" }}
+  #ENTLEERUNG_HYD_2:             !include { file: templates/wp_generic.yaml, vars: { property: "ENTLEERUNG_HYD_2", target: "Kessel" }}
+  #RELAIS_NHZ1:                  !include { file: templates/wp_generic.yaml, vars: { property: "RELAIS_NHZ1", target: "Kessel" }}
+  #RELAIS_NHZ2:                  !include { file: templates/wp_generic.yaml, vars: { property: "RELAIS_NHZ2", target: "Kessel" }}
+  #RELAIS_NHZ3:                  !include { file: templates/wp_generic.yaml, vars: { property: "RELAIS_NHZ3", target: "Kessel" }}
+  #SCHRITTMOTOR_PHASE_1:         !include { file: templates/wp_generic.yaml, vars: { property: "SCHRITTMOTOR_PHASE_1", target: "Kessel" }}
+  #SCHRITTMOTOR_PHASE_2:         !include { file: templates/wp_generic.yaml, vars: { property: "SCHRITTMOTOR_PHASE_2", target: "Kessel" }}
+  #SCHRITTMOTOR_PHASE_3:         !include { file: templates/wp_generic.yaml, vars: { property: "SCHRITTMOTOR_PHASE_3", target: "Kessel" }}
+  #SCHRITTMOTOR_PHASE_4:         !include { file: templates/wp_generic.yaml, vars: { property: "SCHRITTMOTOR_PHASE_4", target: "Kessel" }}
+  SOLLSPREIZUNG:                !include { file: templates/wp_generic.yaml, vars: { property: "SOLLSPREIZUNG", target: "Kessel" }}
+  MAXIMALE_PUMPENLEISTUNG:      !include { file: templates/wp_generic.yaml, vars: { property: "MAXIMALE_PUMPENLEISTUNG", unit: "%", target: "Heizmodul" }}
+  STANDBY_PUMPENLEISTUNG:       !include { file: templates/wp_generic.yaml, vars: { property: "STANDBY_PUMPENLEISTUNG", unit: "%", target: "Heizmodul" }}
+  LEISTUNG_WARMWASSERPUMPE:     !include { file: templates/wp_generic.yaml, vars: { property: "LEISTUNG_WARMWASSERPUMPE", unit: "%", target: "Heizmodul" }}
+  #MINIMALE_ABTAUZEIT:           !include { file: templates/wp_generic.yaml, vars: { property: "MINIMALE_ABTAUZEIT", unit: "min", target: "Manager" }}
+  MINIMALE_ABTAUZEIT:           !include { file: templates/wp_number.yaml, vars: { property: "MINIMALE_ABTAUZEIT", min: "1", max: "120", step: "1", accuracy_decimals: "0", unit: "min", target: "Manager", group: group_verdichter  }}
+
+  ABTAUEN_EINLEITEN:            !include { file: templates/wp_generic.yaml, vars: { property: "ABTAUEN_EINLEITEN", target: "Kessel" }}
+  #STILLSTANDSZEIT:              !include { file: templates/wp_generic.yaml, vars: { property: "STILLSTANDSZEIT", unit: "min", target: "Kessel", group: group_statuswp }}
+  STILLSTANDSZEIT:                    !include { file: templates/wp_number.yaml, vars: { property: "STILLSTANDSZEIT", min: "1", max: "120", step: "1", accuracy_decimals: "0", unit: "min", target: "Kessel", group: group_verdichter  }}
+  
+  #MAXIMALER_STROM:              !include { file: templates/wp_generic.yaml, vars: { property: "MAXIMALER_STROM", unit: "A", target: "Heizmodul" }}
+  MAXIMALER_STROM:           !include { file: templates/wp_number.yaml, vars: { property: "MAXIMALER_STROM", min: "1", max: "50", step: "0.1", accuracy_decimals: "1", unit: "A", target: "Heizmodul", group: group_verdichter  }}
+
+  #MINIMALE_LAUFZEIT:            !include { file: templates/wp_generic.yaml, vars: { property: "MINIMALE_LAUFZEIT", unit: "min", target: "Kessel" }}
+  MINIMALE_LAUFZEIT:           !include { file: templates/wp_number.yaml, vars: { property: "MINIMALE_LAUFZEIT", min: "1", max: "30", step: "1", accuracy_decimals: "0", unit: "min", target: "Kessel", group: group_verdichter  }}
+
+  #WAERMEBEDARF:                 !include { file: templates/wp_generic.yaml, vars: { property: "WAERMEBEDARF", unit: "kW", target: "Kessel" }}
+  WAERMEBEDARF:           !include { file: templates/wp_number.yaml, vars: { property: "WAERMEBEDARF"         , min: "1"    , max: "20", step: "0.1", accuracy_decimals: "1", target: "Kessel", unit: "kW", group: group_verdichter }}
+
+  #AUSLEGUNGSTEMPERATUR:                     !include { file: templates/wp_temperature.yaml, vars: { property: "AUSLEGUNGSTEMPERATUR", target: "Kessel" }}
+  AUSLEGUNGSTEMPERATUR:           !include { file: templates/wp_number.yaml, vars: { property: "AUSLEGUNGSTEMPERATUR"         , min: "-25"    , max: "25", step: "0.1", accuracy_decimals: "1",  target: "Kessel", unit: "kW", group: group_verdichter }}
+
+
+  #KONSTANTE_LEISTUNG:           !include { file: templates/wp_generic.yaml, vars: { property: "KONSTANTE_LEISTUNG", unit: "kW", target: "Manager" }}
+  KONSTANTE_LEISTUNG:           !include { file: templates/wp_number.yaml, vars: { property: "KONSTANTE_LEISTUNG", min: "1", max: "20", step: "0.1", accuracy_decimals: "1", unit: "kW", target: "Manager", group: group_verdichter  }}
+  
+  VERDICHTER_SOFORTSTART:       !include { file: templates/wp_generic.yaml, vars: { property: "VERDICHTER_SOFORTSTART", target: "Kessel" }}
+  REDUZIERUNG_LEISTUNG:         !include { file: templates/wp_generic.yaml, vars: { property: "REDUZIERUNG_LEISTUNG", target: "Kessel" }}
+  SILENT_LEISTUNG:              !include { file: templates/wp_generic.yaml, vars: { property: "SILENT_LEISTUNG", unit: "%", target: "Kessel" }}
+  SILENT_LUEFTER:               !include { file: templates/wp_generic.yaml, vars: { property: "SILENT_LUEFTER", unit: "%", target: "Kessel" }}
+  WAERMEPUMPE_AUS:              !include { file: templates/wp_generic.yaml, vars: { property: "WAERMEPUMPE_AUS", target: "Kessel" }}
+  EVU_SPERRE_CONFIG:            !include { file: templates/wp_generic.yaml, vars: { property: "EVU_SPERRE_CONFIG", target: "Kessel" }}
+  INBETRIEBNAHME_NOTBETRIEB:    !include { file: templates/wp_generic.yaml, vars: { property: "INBETRIEBNAHME_NOTBETRIEB", target: "Kessel" }}
+  EINGANG_X1_13:                !include { file: templates/wp_generic.yaml, vars: { property: "EINGANG_X1_13", target: "Kessel" }}
+  EINGANG_X1_14:                !include { file: templates/wp_generic.yaml, vars: { property: "EINGANG_X1_14", target: "Kessel" }}
+  FUNKTION_X1_16:               !include { file: templates/wp_generic.yaml, vars: { property: "FUNKTION_X1_16", target: "Kessel" }}
+  PUMPE_X1_16:                  !include { file: templates/wp_generic.yaml, vars: { property: "PUMPE_X1_16", target: "Kessel" }}
+  LEISTUNG_PWM_X1_16:           !include { file: templates/wp_generic.yaml, vars: { property: "LEISTUNG_PWM_X1_16", unit: "%", target: "Kessel" }}
+  LEISTUNG_VOLT_X1_16:          !include { file: templates/wp_generic.yaml, vars: { property: "LEISTUNG_VOLT_X1_16", unit: "V", target: "Kessel" }}
+  FUNKTION_X1_17:               !include { file: templates/wp_generic.yaml, vars: { property: "FUNKTION_X1_17", target: "Kessel" }}
+  PUMPE_X1_17:                  !include { file: templates/wp_generic.yaml, vars: { property: "PUMPE_X1_17", target: "Kessel" }}
+  LEISTUNG_PWM_X1_17:           !include { file: templates/wp_generic.yaml, vars: { property: "LEISTUNG_PWM_X1_17", unit: "%", target: "Kessel" }}
+  LEISTUNG_VOLT_X1_17:          !include { file: templates/wp_generic.yaml, vars: { property: "LEISTUNG_VOLT_X1_17", unit: "V", target: "Kessel" }}
+  FEHLERAUSGANG:                !include { file: templates/wp_generic.yaml, vars: { property: "FEHLERAUSGANG", target: "Kessel" }}
+  PUFFERTRIEB:                  !include { file: templates/wp_generic.yaml, vars: { property: "PUFFERTRIEB", target: "Kessel" }}
+  
+  SOMMERBETRIEB:                !include { file: templates/wp_switch.yaml, vars: { property: "SOMMERBETRIEB" , target: "Kessel", group: group_heizen }}
+  
+  VORLAUFANTEIL_HEIZKREIS:      !include { file: templates/wp_generic.yaml, vars: { property: "VORLAUFANTEIL_HEIZKREIS", unit: "%", target: "Kessel" }}
+  #PUMPENZYKLEN:                 !include { file: templates/wp_generic.yaml, vars: { property: "PUMPENZYKLEN", target: "Kessel" }}
+  PUMPENZYKLEN:                      !include { file: templates/wp_switch.yaml, vars: { property: "PUMPENZYKLEN" , target: "Kessel", group: group_heizen }}
+
+  WARMWASSERBETRIEB:            !include { file: templates/wp_generic.yaml, vars: { property: "WARMWASSERBETRIEB", target: "Kessel" }}
+  #WW_LERNFUNKTION:              !include { file: templates/wp_generic.yaml, vars: { property: "WW_LERNFUNKTION", target: "Kessel" }}
+  WW_LERNFUNKTION:     !include { file: templates/wp_switch.yaml, vars: { property: "WW_LERNFUNKTION" , target: "Kessel", group: group_ww }}
+  KOMBISPEICHER:                !include { file: templates/wp_generic.yaml, vars: { property: "KOMBISPEICHER", target: "Kessel" }}
+  
+  WW_LEISTUNG_SOMMER:           !include { file: templates/wp_number.yaml, vars: { property: "WW_LEISTUNG_SOMMER"         , min: "2"    , max: "6", target: "Heizmodul", unit: "kW", group: group_ww }}
+  WW_LEISTUNG_WINTER:           !include { file: templates/wp_number.yaml, vars: { property: "WW_LEISTUNG_WINTER"         , min: "2"    , max: "6", target: "Heizmodul", unit: "kW", group: group_ww }}
+
+  #ANTILEGIONELLENBEHANDLUNG:    !include { file: templates/wp_generic.yaml, vars: { property: "ANTILEGIONELLENBEHANDLUNG", target: "Kessel" }}
+  ANTILEGIONELLENBEHANDLUNG:     !include { file: templates/wp_switch.yaml, vars: { property: "ANTILEGIONELLENBEHANDLUNG" , target: "Kessel", group: group_ww }}
+
+  WW_ANFORDERUNG:               !include { file: templates/wp_generic.yaml, vars: { property: "WW_ANFORDERUNG", target: "Kessel" }}
+
+
+  KUEHLEN:                      !include { file: templates/wp_switch.yaml, vars: { property: "KUEHLEN" , target: "Kessel", group: group_kuehlen }}
+
+  GRENZE_KUEHLEN:                      !include { file: templates/wp_number.yaml, vars: { property: "GRENZE_KUEHLEN", min: "15", max: "40", step: "0.1", accuracy_decimals: "1", unit: "°C", target: "Kessel", group: group_kuehlen  }}
+  KUEHLEN_LEISTUNG:                    !include { file: templates/wp_number.yaml, vars: { property: "KUEHLEN_LEISTUNG", min: "1", max: "20", step: "0.1", accuracy_decimals: "1", unit: "kW", target: "Heizmodul", group: group_kuehlen  }}
+  HYSTERESE_VORLAUFTEMP_KUEHLEN:       !include { file: templates/wp_number.yaml, vars: { property: "HYSTERESE_VORLAUFTEMP_KUEHLEN", min: "4", max: "10", step: "0.1", accuracy_decimals: "1", unit: "K", target: "Kessel", group: group_kuehlen  }}
+  VORLAUFSOLLTEMPERATUR_KUEHLEN:       !include { file: templates/wp_number.yaml, vars: { property: "VORLAUFSOLLTEMPERATUR_KUEHLEN", min: "15", max: "25", step: "0.1", accuracy_decimals: "1", unit: "°C", target: "HK1", group: group_kuehlen  }}
+  RAUMSOLLTEMP_KUEHLEN:                !include { file: templates/wp_number.yaml, vars: { property: "RAUMSOLLTEMP_KUEHLEN", min: "20", max: "30", step: "0.1", accuracy_decimals: "1", unit: "°C", target: "HK1", group: group_kuehlen  }}
+  GEBAEUDEDAEMPFUNG:                   !include { file: templates/wp_number.yaml, vars: { property: "GEBAEUDEDAEMPFUNG", min: "0", max: "3", step: "1", accuracy_decimals: "1", target: "Kessel", group: group_heizen  }}
+  REGLERDYNAMIK_HEIZEN:                !include { file: templates/wp_number.yaml, vars: { property: "REGLERDYNAMIK_HEIZEN", min: "0", max: "100", step: "1", accuracy_decimals: "1", target: "Kessel", group: group_heizen  }}
+
+  KUEHLKREIS:                   !include { file: templates/wp_generic.yaml, vars: { property: "KUEHLKREIS", target: "HK1" }}
+  KUEHLART:                     !include { file: templates/wp_generic.yaml, vars: { property: "KUEHLART", target: "HK1" }}
+
+  #BIVALENZTEMPERATUR_WW:                    !include { file: templates/wp_temperature.yaml, vars: { property: "BIVALENZTEMPERATUR_WW", target: "Kessel" }}
+  BIVALENZTEMPERATUR_WW:                    !include { file: templates/wp_number.yaml, vars: { property: "BIVALENZTEMPERATUR_WW", min: "-20", max: "40", step: "0.1", accuracy_decimals: "1", unit: "°C", target: "Kessel", group: group_ww  }}
+  #EINSATZGRENZE_HZG:                        !include { file: templates/wp_temperature.yaml, vars: { property: "EINSATZGRENZE_HZG", target: "Kessel" }}
+  EINSATZGRENZE_HZG:                        !include { file: templates/wp_number.yaml, vars: { property: "EINSATZGRENZE_HZG", min: "-25", max: "-12", step: "0.1", accuracy_decimals: "1", unit: "°C", target: "Kessel", group: group_heizen  }}
+
+  #EINSATZGRENZE_WW:                         !include { file: templates/wp_temperature.yaml, vars: { property: "EINSATZGRENZE_WW", target: "Kessel" }}
+  EINSATZGRENZE_WW:                         !include { file: templates/wp_number.yaml, vars: { property: "EINSATZGRENZE_WW", min: "-25", max: "-7", step: "0.1", accuracy_decimals: "1", unit: "°C", target: "Kessel", group: group_ww  }}
+  FROSTSCHUTZTEMPERATUR:                    !include { file: templates/wp_temperature.yaml, vars: { property: "FROSTSCHUTZTEMPERATUR", target: "Heizmodul" }}
+  SOLL_UEBERHITZUNG:                        !include { file: templates/wp_temperature.yaml, vars: { property: "SOLL_UEBERHITZUNG", target: "Heizmodul" }}
+  IST_UEBERHITZUNG_V:                       !include { file: templates/wp_temperature.yaml, vars: { property: "IST_UEBERHITZUNG_V", target: "Heizmodul" }}
+  REGELABWEICHUNG:                          !include { file: templates/wp_temperature.yaml, vars: { property: "REGELABWEICHUNG", target: "Heizmodul" }}
+  TEMPERATUR_INV_LUEFTER:                   !include { file: templates/wp_temperature.yaml, vars: { property: "TEMPERATUR_INV_LUEFTER", target: "Heizmodul" }}
+  KONDENSATBEGLEITHEIZUNG_AUSSENTEMPERATUR: !include { file: templates/wp_temperature.yaml, vars: { property: "KONDENSATBEGLEITHEIZUNG_AUSSENTEMPERATUR", target: "Kessel" }}
+  HEIZEN_TEMPERATURVORGABE_1V:              !include { file: templates/wp_temperature.yaml, vars: { property: "HEIZEN_TEMPERATURVORGABE_1V", target: "Kessel" }}
+  HEIZEN_TEMPERATURVORGABE_10V:             !include { file: templates/wp_temperature.yaml, vars: { property: "HEIZEN_TEMPERATURVORGABE_10V", target: "Kessel" }}
+  KUEHLEN_TEMPERATURVORGABE_1V:             !include { file: templates/wp_temperature.yaml, vars: { property: "KUEHLEN_TEMPERATURVORGABE_1V", target: "Kessel" }}
+  KUEHLEN_TEMPERATURVORGABE_10V:            !include { file: templates/wp_temperature.yaml, vars: { property: "KUEHLEN_TEMPERATURVORGABE_10V", target: "Kessel" }}
+  
+  SENSORABGLEICH_VORLAUF_WP:                !include { file: templates/wp_temperature.yaml, vars: { property: "SENSORABGLEICH_VORLAUF_WP", target: "Kessel" }}
+  SENSORABGLEICH_VORLAUF_NHZ:               !include { file: templates/wp_temperature.yaml, vars: { property: "SENSORABGLEICH_VORLAUF_NHZ", target: "Kessel" }}
+  SENSORABGLEICH_RUECKLAUF_WP:              !include { file: templates/wp_temperature.yaml, vars: { property: "SENSORABGLEICH_RUECKLAUF_WP", target: "Kessel" }}
+  #AUSSENTEMPERATUR_EINST:                   !include { file: templates/wp_temperature.yaml, vars: { property: "AUSSENTEMPERATUR_EINST", target: "Kessel" }}
+  AUSSENTEMPERATUR_EINST:                   !include { file: templates/wp_number.yaml, vars: { property: "AUSSENTEMPERATUR_EINST", min: "10", max: "30", step: "0.1", accuracy_decimals: "1", unit: "°C", target: "Kessel", group: group_heizen  }}
+  #WARMWASSERHYSTERESE:                      !include { file: templates/wp_temperature.yaml, vars: { property: "WARMWASSERHYSTERESE", target: "Kessel" }}
+  WARMWASSERHYSTERESE:                        !include { file: templates/wp_number.yaml, vars: { property: "WARMWASSERHYSTERESE", min: "1", max: "15", step: "0.1", accuracy_decimals: "1", unit: "K", target: "Kessel", group: group_ww  }}
+  
+  #MAXIMALE_VORLAUFTEMP_WW:                  !include { file: templates/wp_temperature.yaml, vars: { property: "MAXIMALE_VORLAUFTEMP_WW", target: "Kessel" }}
+  MAXIMALE_VORLAUFTEMP_WW:                        !include { file: templates/wp_number.yaml, vars: { property: "MAXIMALE_VORLAUFTEMP_WW", min: "20", max: "80", step: "0.1", accuracy_decimals: "1", unit: "°C", target: "Kessel", group: group_ww  }}
+
+  #FESTWERTBETRIEB:                          !include { file: templates/wp_temperature.yaml, vars: { property: "FESTWERTBETRIEB", target: "Kessel" }}
+  FESTWERTBETRIEB:                        !include { file: templates/wp_number.yaml, vars: { property: "FESTWERTBETRIEB", min: "-2867.2", max: "70", step: "0.1", accuracy_decimals: "1", unit: "°C", target: "Kessel", group: group_heizen  }}
+  
+  #WW_LEG_SOLLTEMPERATUR:                        !include { file: templates/wp_temperature.yaml, vars: { property: "WW_LEG_SOLLTEMPERATUR", target: "Kessel" }}
+  WW_LEG_SOLLTEMPERATUR:                        !include { file: templates/wp_number.yaml, vars: { property: "WW_LEG_SOLLTEMPERATUR", min: "50", max: "65", step: "0.1", accuracy_decimals: "1", unit: "°C", target: "Kessel", group: group_ww  }}
+
+  RESTSTILLSTANDSZEIT:                      !include { file: templates/wp_generic.yaml, vars: { property: "RESTSTILLSTANDSZEIT", unit: "min", target: "Heizmodul", group: group_statuswp }}
+
+  KOMFORTTEMPERATUR_WW:                     !include { file: templates/wp_number.yaml, vars: { property: "KOMFORTTEMPERATUR_WW", min: "10", max: "60", step: "0.1", accuracy_decimals: "1", unit: "°C", target: "WW", group: group_ww  }}
+  ECOTEMPERATUR_WW:                         !include { file: templates/wp_number.yaml, vars: { property: "ECOTEMPERATUR_WW", min: "10", max: "60", step: "0.1", accuracy_decimals: "1", unit: "°C", target: "WW", group: group_ww  }}
+
+  SOLLTEMP_WW:                              !include { file: templates/wp_temperature.yaml, vars: { property: "SPEICHERSOLLTEMP", update_interval: $interval_medium, group: group_ww}}
+  ISTTEMP_WW:                               !include { file: templates/wp_temperature.yaml, vars: { property: "SPEICHERISTTEMP", update_interval: $interval_medium, group: group_ww }}
+
+  ANTEIL_VORLAUF_HK1:                  !include { file: templates/wp_number.yaml, vars: { property: "ANTEIL_VORLAUF_HK1"         , min: "0.0"   , max: "100.0", unit: "%" , icon: "mdi:percent-box"         , target: "Kessel", group: group_heizen }}
+
+text:
+  - id: !extend HK1_CAN_ID
+    initial_value: "0x601"
+  - id: !extend HK2_CAN_ID
+    initial_value: "0x602"
+  - id: !extend Heizmodul_CAN_ID
+    initial_value: "0x514"
+
+sensor:
+  - platform: uptime  # Betriebszeit des ESP
+    id: uptime_sensor
+    update_interval: 10s
+
+  - platform: wifi_signal # Reports the WiFi signal strength/RSSI in dB
+    name: "WiFi Signal dB"
+    id: wifi_signal_db
+    update_interval: 60s
+    entity_category: "diagnostic"
+
+text_sensor:
+  - platform: template
+    name: "Uptime"
+    lambda: |-
+      int seconds = id(uptime_sensor).state;
+      int days = seconds / 86400;
+      int hours = (seconds % 86400) / 3600;
+      int minutes = (seconds % 3600) / 60;
+      int secs = seconds % 60;
+      return to_string(days) + "d:" + to_string(hours) + "h:" + to_string(minutes) + "m:" + to_string(secs) + "s";
+    update_interval: 30s
+    entity_category: diagnostic
+
+
+#########################################
+#                                       #
+#   Global variables                    #
+#                                       #
+#########################################
+globals:
+  - id: heat_pump_variant
+    type: std::string
+    initial_value: '"WPL-A-5"'
+
+number:
+  - platform: template
+    name: External Temperature Sensor
+    id: external_temperature_sensor
+    max_value: 50
+    min_value: 0
+    step: 0.1
+    mode: box
+    optimistic: true
+    on_value:
+      then:
+        - lambda: |-
+            //if (x > 0.0f) {
+              //ESP_LOGI("SET", "Sending room temperature %f to heatpump", x);
+              //queueTransmission(CanNode::HK1, Property::kRAUMISTTEMP, static_cast<std::uint16_t>(x * 10.0f));
+            //}
+
+  - platform: template
+    name: External Humidity Sensor
+    id: external_humidity_sensor
+    max_value: 100
+    min_value: 0
+    step: 0.1
+    mode: box
+    optimistic: true
+    on_value:
+      then:
+        - lambda: |-
+            //if (x > 0.0f) {
+              //ESP_LOGI("SET", "Sending humidity %f to heatpump", x);
+              //queueTransmission(CanNode::HK1, Property::kRAUMFEUCHTE, static_cast<std::uint16_t>(x * 10.0f));
+            //}

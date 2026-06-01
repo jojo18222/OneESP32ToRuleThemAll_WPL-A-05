@@ -1,14 +1,17 @@
 #include "communication.h"
 #include "esphome.h"
 
-std::array<CanNode, 8U> CanNode::all_nodes{{{ESPCLIENT_ID, "ESPClient"},
+std::array<CanNode, 11U> CanNode::all_nodes{{{ESPCLIENT_ID, "ESPClient"},
                                             {0x123, "Heizmodul"},
                                             {0x123, "Kessel"},
                                             {0x123, "HK1"},
                                             {0x123, "HK2"},
                                             {0x123, "FET"},
                                             {0x123, "MFG"},
-                                            {0x123, "Manager"}}};
+                                            {0x123, "Manager"},
+                                            {0x123, "WW"},
+                                            {0x123, "FES"},
+                                            {0x123, "TBD"}}};
 
 CanNode* CanNode::ESPClient = &CanNode::all_nodes[0];
 CanNode* CanNode::Heizmodul = &CanNode::all_nodes[1];
@@ -18,6 +21,9 @@ CanNode* CanNode::HK2 = &CanNode::all_nodes[4];
 CanNode* CanNode::FET = &CanNode::all_nodes[5];
 CanNode* CanNode::MFG = &CanNode::all_nodes[6];
 CanNode* CanNode::Manager = &CanNode::all_nodes[7];
+CanNode* CanNode::WW = &CanNode::all_nodes[8];
+CanNode* CanNode::FES = &CanNode::all_nodes[9];
+CanNode* CanNode::TBD = &CanNode::all_nodes[10];
 
 std::list<ConditionalRequest>& getConditionalRequests() {
     static std::list<ConditionalRequest> requests;
@@ -214,17 +220,49 @@ void requestData(esphome::canbus::Canbus* can_bus, const CanNode* node, const Pr
  *        the type.
  */
 void sendData(esphome::canbus::Canbus* can_bus, const CanNode* node, const Property property,
-              const std::uint16_t value) {
+              const std::uint16_t value, bool request, uint8_t action_byte) {
     if (can_bus == nullptr || node == nullptr) {
         return;
     }
     const auto use_extended_id{false};
-    const auto [IdByte1, IdByte2] = asBytes(node->getWriteId());
+    
+    uint8_t id1, id2;
+    
+    // --- WORKAROUND FÜR DEN FEK-BROADCAST ---
+    // Wenn das Action-Byte 0xFE ist, erzwingen wir die Ziel-ID 0x9600.
+    if (action_byte == 0xFE) {
+        id1 = 0x96;
+        id2 = 0x00;
+    } else {
+        auto [b1, b2] = asBytes(node->getWriteId());
+        id1 = b1;
+        id2 = b2;
+    }
+
     const auto [IndexByte1, IndexByte2] = asBytes(property.id);
     const auto [ValueByte1, ValueByte2] = asBytes(value);
-    std::vector<std::uint8_t> data{IdByte1, IdByte2, 0xfa, IndexByte1, IndexByte2, ValueByte1, ValueByte2};
+    
+    // Hier setzen wir jetzt flexibel das action_byte ein!
+    std::vector<std::uint8_t> data{id1, id2, action_byte, IndexByte1, IndexByte2, ValueByte1, ValueByte2};
 
     can_bus->send_data(CanNode::ESPClient->canId, use_extended_id, data);
     // Request the value again to make sure the sensor is updated, with a delay of 10s to allow the heatpump to react.
-    scheduleRequest(node, property, std::chrono::seconds(10));
+    if (request) {
+        scheduleRequest(node, property, std::chrono::seconds(10));
+    }
+    else {
+        ESP_LOGD("SEND", "Sending %d for %.*s to %.*s ", value, static_cast<int>(property.name.length()),
+             property.name.data(), static_cast<int>(node->name.length()), node->name.data());
+
+        ESP_LOGD("CAN_OUT", "sent can message std can_id=0x%03X size=%d", CanNode::ESPClient->canId, data.size());
+        if (data.size() >= 7) {
+            ESP_LOGD("CAN_OUT", "   can_message.data[0]=%02x", data[0]);
+            ESP_LOGD("CAN_OUT", "   can_message.data[1]=%02x", data[1]);
+            ESP_LOGD("CAN_OUT", "   can_message.data[2]=%02x", data[2]);
+            ESP_LOGD("CAN_OUT", "   can_message.data[3]=%02x", data[3]);
+            ESP_LOGD("CAN_OUT", "   can_message.data[4]=%02x", data[4]);
+            ESP_LOGD("CAN_OUT", "   can_message.data[5]=%02x", data[5]);
+            ESP_LOGD("CAN_OUT", "   can_message.data[6]=%02x", data[6]);
+        }
+    }
 }

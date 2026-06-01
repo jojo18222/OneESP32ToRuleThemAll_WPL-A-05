@@ -3,6 +3,8 @@ defaults:
   name_suffix: ""
   exposed: "true"
   initial_option: "Unbekannt"
+  update_interval: $interval_medium
+  group: group_default
 
 select:
   - platform: template
@@ -10,6 +12,8 @@ select:
     id: ${property}
     options: ${options}
     initial_option: "${initial_option}"
+    web_server:
+      sorting_group_id: ${group}
     optimistic: true
     setup_priority: 100
     set_action:
@@ -34,6 +38,13 @@ select:
                   id: mqtt_push_event
                   suffix: ${property}
                   payload: !lambda 'return x.c_str();'
+
+interval:
+  - interval: ${update_interval}
+    then:
+      - lambda: |-
+          queueRequest(CanNode::${target}, Property::k${property});
+
 
 esphome:
   on_boot:

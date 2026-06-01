@@ -25,7 +25,7 @@ struct CanNode {
     std::uint16_t getReadId() const { return getWriteId() | 0x100; }
     std::uint16_t getResponseId() const { return getWriteId() | 0x200; }
 
-    static std::array<CanNode, 8U> all_nodes;
+    static std::array<CanNode, 11U> all_nodes;
 
     static CanNode* ESPClient;
     static CanNode* Heizmodul;
@@ -35,6 +35,9 @@ struct CanNode {
     static CanNode* FET;
     static CanNode* MFG;
     static CanNode* Manager;
+    static CanNode* WW;
+    static CanNode* FES;
+    static CanNode* TBD;
 };
 
 using Task = std::pair<const CanNode*, const Property>;
@@ -134,6 +137,6 @@ void requestData(esphome::canbus::Canbus* can_bus, const CanNode* node, const Pr
  *        the type.
  */
 void sendData(esphome::canbus::Canbus* can_bus, const CanNode* node, const Property property,
-              const std::uint16_t value);
+              const std::uint16_t value, bool request = true, uint8_t action_byte = 0xfa);
 
 #endif

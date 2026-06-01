@@ -1,3 +1,6 @@
+defaults:
+  group: group_default
+
 esphome:
   on_boot:
     - priority: -50
@@ -60,4 +63,13 @@ text_sensor:
   - platform: template
     name: "HEATPUMP_DATETIME"
     id: HEATPUMP_DATETIME
-    update_interval: never
+    update_interval: 60s
+    web_server:
+      sorting_group_id: ${group}
+    lambda: |-
+        queueRequest(CanNode::Kessel, Property::kJAHR);
+        queueRequest(CanNode::Kessel, Property::kMONAT);
+        queueRequest(CanNode::Kessel, Property::kTAG);
+        queueRequest(CanNode::Kessel, Property::kSTUNDE);
+        queueRequest(CanNode::Kessel, Property::kMINUTE);
+        return {};

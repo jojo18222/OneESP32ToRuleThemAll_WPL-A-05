@@ -3,6 +3,7 @@ defaults:
   accuracy_decimals: "2"
   target: "Kessel"
   exposed: "true"
+  group: group_default
 
 globals:
   - id: gOFFSET_${property_wh}
@@ -18,6 +19,8 @@ sensor:
     accuracy_decimals: 3
     internal: true
     update_interval: never
+    web_server:
+      sorting_group_id: ${group}
     filters:
       - multiply: 0.001
       - lambda: |-
@@ -31,7 +34,9 @@ sensor:
     accuracy_decimals: ${accuracy_decimals}
     device_class: energy
     state_class: total_increasing
-    update_interval: never
+    update_interval: $interval_very_slow
+    web_server:
+      sorting_group_id: ${group}
 
 esphome:
   on_boot:

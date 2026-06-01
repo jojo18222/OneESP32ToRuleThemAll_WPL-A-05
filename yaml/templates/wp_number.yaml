@@ -5,17 +5,24 @@ defaults:
   max: "100"
   icon: "mdi:valve"
   unit: ""
+  name_suffix: ""
   exposed: "true"
+  update_interval: $interval_medium
+  group: group_default
+  accuracy_decimals: "1"
 
 number:
   - platform: template
-    name: ${property}
-    id: ${property}
+    name: ${property}${name_suffix}
+    id: ${property}${name_suffix}
     icon: ${icon}
     unit_of_measurement: ${unit}
     min_value: ${min}
     max_value: ${max}
     step: ${step}
+    mode: box
+    web_server:
+      sorting_group_id: ${group}
     initial_value: NAN
     optimistic: true
     set_action:
@@ -36,15 +43,22 @@ number:
             condition:
               lambda: |-
                 #if defined(ANALYTICS)
-                  return getWhitelistedEntities().contains(id(${property}));
+                  return getWhitelistedEntities().contains(id(${property}${name_suffix}));
                 #else
                   return false;
                 #endif
             then:
               - script.execute:
                   id: mqtt_push_event
-                  suffix: ${property}
+                  suffix: ${property}${name_suffix}
                   payload: !lambda 'return to_string(x);'
+
+interval:
+  - interval: ${update_interval}
+    then:
+      - lambda: |-
+          queueRequest(CanNode::${target}, Property::k${property});
+
 
 esphome:
   on_boot:
@@ -54,7 +68,7 @@ esphome:
             CallbackHandler::instance().addCallbacks({{CanNode::${target},Property::k${property}},
                                                       {CanNode::Heizmodul,Property::k${property}}},[](const SimpleVariant& value){
                 const auto newValue{value.get<float>()};
-                auto property{id(${property})};
+                auto property{id(${property}${name_suffix})};
                 if(!std::is_eq(property->state <=> newValue)) {
                   property->publish_state(newValue);
                 }
@@ -62,7 +76,7 @@ esphome:
 
             #if defined(ANALYTICS)
               if(${exposed}) {
-                getWhitelistedEntities().insert(id(${property}));
+                getWhitelistedEntities().insert(id(${property}${name_suffix}));
               }
             #endif
     - priority: -100.0

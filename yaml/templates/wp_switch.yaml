@@ -2,12 +2,16 @@ defaults:
   target: "Kessel"
   icon: "mdi:toggle-switch-variant"
   exposed: "true"
+  update_interval: $interval_medium
+  group: group_default
 
 switch:
   - platform: template
     name: ${property}
     id: ${property}
     icon: ${icon}
+    web_server:
+      sorting_group_id: ${group}
     restore_mode: DISABLED
     turn_on_action:
       - lambda: |-
@@ -30,6 +34,14 @@ switch:
                   id: mqtt_push_event
                   suffix: ${property}
                   payload: !lambda 'return x ? "On" : "Off";'
+
+
+interval:
+  - interval: ${update_interval}
+    then:
+      - lambda: |-
+          queueRequest(CanNode::${target}, Property::k${property});
+
 
 esphome:
   on_boot:

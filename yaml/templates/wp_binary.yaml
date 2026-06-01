@@ -1,11 +1,17 @@
 defaults:
   exposed: "true"
+  group: group_default
+  target: "Kessel"     
+  property: "INDEX_NOT_FOUND"
+  update_interval: $interval_slow
 
 binary_sensor:
   - platform: template
     name: ${name}
     id: ${name}
     trigger_on_initial_state: true
+    web_server:
+      sorting_group_id: ${group}
     on_state:
       then:
         - if:
@@ -22,13 +28,40 @@ binary_sensor:
                   suffix: ${name}
                   payload: !lambda 'return x ? "On" : "Off";'
 
+interval:
+  - interval: ${update_interval}
+    then:
+      - lambda: |-
+          if (Property::k${property} != Property::kINDEX_NOT_FOUND) {
+            queueRequest(CanNode::${target}, Property::k${property});
+          }
+
 esphome:
   on_boot:
     - priority: -50
       then:
         - lambda: |-
+            if (Property::k${property} != Property::kINDEX_NOT_FOUND) {
+              CallbackHandler::instance().addCallback({CanNode::${target}, Property::k${property}}, [](const SimpleVariant& value){
+
+                  bool is_on = (value.get<int>() != 0); 
+                  auto binary_sensor_id{id(${name})};
+                  
+                  if(binary_sensor_id->state != is_on) {
+                    binary_sensor_id->publish_state(is_on);
+                  }
+              });
+            }
+
             #if defined(ANALYTICS)
               if(${exposed}) {
                 getWhitelistedEntities().insert(id(${name}));
               }
             #endif
+    - priority: -100.0
+      then:
+        - delay: 250ms
+        - lambda: |-
+            if (Property::k${property} != Property::kINDEX_NOT_FOUND) {
+              queueRequest(CanNode::${target}, Property::k${property});
+            }

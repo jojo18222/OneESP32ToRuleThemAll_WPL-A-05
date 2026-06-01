@@ -85,9 +85,17 @@ Mapper::Mapper() {
 #if defined(TTF_07_C)
     betriebsartMap = {{0x0000, "Notbetrieb"}, {0x0100, "Bereitschaft"}, {0x0200, "Programm"},
                       {0x0300, "Komfort"},    {0x0400, "Eco"},          {0x0500, "Warmwasser"}};
-#elif defined(WPL_13) || defined(WPL_17) || defined(WPL_23)
+#elif defined(WPL_13)
     betriebsartMap = {{0x00, "Notbetrieb"}, {0x01, "Bereitschaft"}, {0x02, "Programm"},
                       {0x03, "Komfort"},    {0x04, "Eco"},          {0x05, "Warmwasser"}};
+#elif defined(WPL_A_5)
+    betriebsartMap = {
+    {0x00, "Notbetrieb"},
+    {0x01, "BEREITSCHAFTSBETRIEB"},
+    {0x02, "PROGRAMMBETRIEB"},
+    {0x03, "KOMFORTBETRIEB"},
+    {0x04, "ECO-BETRIEB"},
+    {0x05, "WARMWASSERBETRIEB"}};
 #else
     betriebsartMap = {{0x0000, "Notbetrieb"},    {0x0100, "Bereitschaft"}, {0x0300, "Tagbetrieb"},
                       {0x0400, "Absenkbetrieb"}, {0x0500, "Warmwasser"},   {0x0B00, "Automatik"},
