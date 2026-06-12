@@ -511,7 +511,7 @@ struct Property : public oe32trta::detail::Property {
     PROPERTY(OELSUMPFTEMP, 0x0a39, Type::et_dec_val);
     PROPERTY(UNTERK_COND, 0x0aff, Type::et_dec_val);
     PROPERTY(RAUMEINFLUSS, 0x4ea4);
-    PROPERTY(MINTEMP, 0x4ea7, Type::et_dec_val);
+    PROPERTY(MINTEMP, 0x4ea7, Type::et_dec_u_val);
     PROPERTY(MAXTEMP, 0x4ea8, Type::et_dec_val);
     PROPERTY(MISCHERDYNAMIK, 0x4ea9);
     PROPERTY(SOLLTEMPERATUR, 0x4eb0, Type::et_dec_val);
@@ -573,7 +573,7 @@ struct Property : public oe32trta::detail::Property {
     PROPERTY(EINSATZGRENZE_HZG, 0x01ae, Type::et_dec_val);
     PROPERTY(EINSATZGRENZE_WW, 0x01af, Type::et_dec_val);
     PROPERTY(AUSSENTEMPERATUR_EINST, 0x01bf, Type::et_dec_val);
-    PROPERTY(FESTWERTBETRIEB, 0x01c0, Type::et_dec_val);
+    PROPERTY(FESTWERTBETRIEB, 0x01c0, Type::et_dec_u_val);
     PROPERTY(WW_LERNFUNKTION, 0x027e, Type::et_bool);
     PROPERTY(REGELABWEICHUNG, 0x033d, Type::et_dec_val);
     PROPERTY(GRENZE_KUEHLEN, 0x03dc, Type::et_dec_val);

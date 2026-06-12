@@ -29,6 +29,8 @@ SimpleVariant GetValueByType(const std::uint16_t value, const Type type) {
             return (static_cast<float>(value & 0xFF));
         case Type::et_dec_val:
             return (static_cast<std::int16_t>(value) / 10.0f);
+        case Type::et_dec_u_val:
+            return (static_cast<std::uint16_t>(value) / 10.0f);
         case Type::et_cent_val:
             return (static_cast<std::int16_t>(value) / 100.0f);
         case Type::et_mil_val:
@@ -118,6 +120,13 @@ std::optional<uint16_t> GetRawByType(const SimpleVariant& value, Type type) {
                 return std::nullopt;
             }
             return static_cast<uint16_t>(static_cast<int16_t>(value.get<float>() * 10.0f));
+        }
+
+        case Type::et_dec_u_val: {
+            if (!value.holds_alternative<float>()) {
+                return std::nullopt;
+            }
+            return static_cast<uint16_t>(value.get<float>() * 10.0f);
         }
 
         case Type::et_cent_val: {
