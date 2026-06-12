@@ -100,15 +100,7 @@ interval:
 
   - interval: $interval_medium
     then:
-        - lambda: |-
-            uint8_t val = 1;
-            //queueTransmission(CanNode::Manager, Property::kHEARTBEAT, static_cast<std::uint16_t>(val));
-            //sendData(wp_can, CanNode::Manager, Property::kHEARTBEAT, static_cast<std::uint16_t>(val), false);
-
-  - interval: $interval_medium
-    then:
       - lambda: |-
-          // Wir senden den aktuellen Wert der Number-Entität noch einmal auf den Bus
           float temp = id(external_temperature_sensor).state;
           if (temp > 0.0f) {
               temp = round(temp * 10.0f)/10.0f;
@@ -210,7 +202,8 @@ packages:
   IST_UEBERHITZUNG_SAUGGAS_VERDICHTER:   !include { file: templates/wp_temperature.yaml, vars: { property: "IST_UEBERHITZUNG_SAUGGAS_VERDICHTER", target: "Heizmodul", unit: "°K" , group: group_statuswp }}
   SOLL_UEBERHITZUNG_SAUGGAS_VERDICHTER:  !include { file: templates/wp_temperature.yaml, vars: { property: "SOLL_UEBERHITZUNG_SAUGGAS_VERDICHTER", target: "Heizmodul", unit: "°K" , group: group_statuswp }}
   ADAPTION_UEBERHITZUNG:                 !include { file: templates/wp_temperature.yaml, vars: { property: "ADAPTION_UEBERHITZUNG", target: "Heizmodul", unit: "°K" , group: group_statuswp }}
-  MINTEMP:                               !include { file: templates/wp_temperature.yaml, vars: { property: "MINTEMP"            , target: "HK1"  }}
+  #MINTEMP:                               !include { file: templates/wp_temperature.yaml, vars: { property: "MINTEMP"            , target: "HK1"  }}
+  MINTEMP:                               !include { file: templates/wp_number.yaml, vars: { property: "MINTEMP", min: "10", max: "3686.4", step: "0.1", accuracy_decimals: "1", unit: "°C", target: "HK1", group: group_heizen  }}
   MAXTEMP:                               !include { file: templates/wp_temperature.yaml, vars: { property: "MAXTEMP"            , target: "HK1"  }}
 
   #EL_NACHERW_VERZ_ZEIT:                  !include { file: templates/wp_generic.yaml, vars: { property: "EL_NACHERW_VERZ_ZEIT", unit: "min"   , target: "Kessel"  }}
@@ -420,7 +413,7 @@ packages:
   MAXIMALE_VORLAUFTEMP_WW:                        !include { file: templates/wp_number.yaml, vars: { property: "MAXIMALE_VORLAUFTEMP_WW", min: "20", max: "80", step: "0.1", accuracy_decimals: "1", unit: "°C", target: "Kessel", group: group_ww  }}
 
   #FESTWERTBETRIEB:                          !include { file: templates/wp_temperature.yaml, vars: { property: "FESTWERTBETRIEB", target: "Kessel" }}
-  FESTWERTBETRIEB:                        !include { file: templates/wp_number.yaml, vars: { property: "FESTWERTBETRIEB", min: "-2867.2", max: "70", step: "0.1", accuracy_decimals: "1", unit: "°C", target: "Kessel", group: group_heizen  }}
+  FESTWERTBETRIEB:                        !include { file: templates/wp_number.yaml, vars: { property: "FESTWERTBETRIEB", min: "20", max: "3686.4", step: "0.1", accuracy_decimals: "1", unit: "°C", target: "Kessel", group: group_heizen  }}
   
   #WW_LEG_SOLLTEMPERATUR:                        !include { file: templates/wp_temperature.yaml, vars: { property: "WW_LEG_SOLLTEMPERATUR", target: "Kessel" }}
   WW_LEG_SOLLTEMPERATUR:                        !include { file: templates/wp_number.yaml, vars: { property: "WW_LEG_SOLLTEMPERATUR", min: "50", max: "65", step: "0.1", accuracy_decimals: "1", unit: "°C", target: "Kessel", group: group_ww  }}
