@@ -8,6 +8,7 @@
 enum Type : std::uint8_t {
     et_default = 0,  //   + x
     et_dec_val,      // +/- xx.x
+    et_dec_u_val,      // + xx.x
     et_cent_val,     // +/- x.xx
     et_mil_val,      // +/- x.xxx
     et_byte,
