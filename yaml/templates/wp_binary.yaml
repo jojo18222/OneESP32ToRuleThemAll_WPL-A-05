@@ -4,11 +4,16 @@ defaults:
   target: "Kessel"     
   property: "INDEX_NOT_FOUND"
   update_interval: $interval_slow
+  delayed_on: 0s
+  delayed_off: 0s
 
 binary_sensor:
   - platform: template
     name: ${name}
     id: ${name}
+    filters:
+      - delayed_on: ${delayed_on}
+      - delayed_off: ${delayed_off}
     trigger_on_initial_state: true
     web_server:
       sorting_group_id: ${group}

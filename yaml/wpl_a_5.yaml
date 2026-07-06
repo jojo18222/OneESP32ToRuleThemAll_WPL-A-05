@@ -102,14 +102,14 @@ interval:
     then:
       - lambda: |-
           float temp = id(external_temperature_sensor).state;
-          if (temp > 0.0f) {
+          if (${emulate_fet} && temp > 0.0f) {
               temp = round(temp * 10.0f)/10.0f;
               ESP_LOGI("SET", "Sending room temperature %f to heatpump", temp);
               queueTransmission(CanNode::HK1, Property::kRAUMISTTEMP, static_cast<std::uint16_t>(temp * 10.0f));
           }
 
           float humidity = id(external_humidity_sensor).state;
-          if (humidity > 0.0f) {
+          if (${emulate_fet} && humidity > 0.0f) {
               humidity = round(humidity * 10.0f)/10.0f;
               ESP_LOGI("SET", "Sending humidity %f to heatpump", humidity);
               queueTransmission(CanNode::HK1, Property::kRAUMFEUCHTE, static_cast<std::uint16_t>(humidity * 10.0f));
@@ -125,7 +125,7 @@ packages:
   CORE:                                  !include { file: core.yaml }
   MANAGER:                               !include { file: templates/wp_can_id.yaml, vars: { can_node: "Manager" , can_id: "0x480" }}
 
-  HEIZKREISPUMPE_1:                      !include { file: templates/wp_binary.yaml, vars: { name: "HEIZKREISPUMPE_1", group: group_betriebsstatus }}
+  HEIZKREISPUMPE_1:                      !include { file: templates/wp_binary.yaml, vars: { name: "HEIZKREISPUMPE_1", group: group_betriebsstatus, delayed_on: 1s }}
   HEIZKREISPUMPE_2:                      !include { file: templates/wp_binary.yaml, vars: { name: "HEIZKREISPUMPE_2", group: group_betriebsstatus }}
   Aufheizprogramm:                       !include { file: templates/wp_binary.yaml, vars: { name: "Aufheizprogramm", group: group_betriebsstatus }}
   NHZStufenInBertieb:                    !include { file: templates/wp_binary.yaml, vars: { name: "NHZStufenInBertieb", group: group_betriebsstatus }}
@@ -427,6 +427,13 @@ packages:
   ISTTEMP_WW:                               !include { file: templates/wp_temperature.yaml, vars: { property: "SPEICHERISTTEMP", update_interval: $interval_medium, group: group_ww }}
 
   ANTEIL_VORLAUF_HK1:                  !include { file: templates/wp_number.yaml, vars: { property: "ANTEIL_VORLAUF_HK1"         , min: "0.0"   , max: "100.0", unit: "%" , icon: "mdi:percent-box"         , target: "Kessel", group: group_heizen }}
+
+  # PUMPENLEISTUNG
+  PUMPENLEISTUNG_STANDBY:                !include { file: templates/wp_number.yaml, vars: { property: "PUMPENLEISTUNG_STANDBY"         , min: "0.0"   , max: "100.0", unit: "%" , icon: "mdi:percent-box"         , target: "Manager", group: group_statuswp }}
+  PUMPENLEISTUNG_HEIZEN:                 !include { file: templates/wp_number.yaml, vars: { property: "PUMPENLEISTUNG_HEIZEN"         , min: "0.0"   , max: "100.0", unit: "%" , icon: "mdi:percent-box"         , target: "Manager", group: group_statuswp }}
+  PUMPENLEISTUNG_WW:                     !include { file: templates/wp_number.yaml, vars: { property: "PUMPENLEISTUNG_WW"         , min: "0.0"   , max: "100.0", unit: "%" , icon: "mdi:percent-box"         , target: "Manager", group: group_statuswp }}
+  PUMPENLEISTUNG_KUEHLEN:                !include { file: templates/wp_number.yaml, vars: { property: "PUMPENLEISTUNG_KUEHLEN"         , min: "0.0"   , max: "32768", unit: "%" , icon: "mdi:percent-box"         , target: "Manager", group: group_statuswp }}
+
 
 text:
   - id: !extend HK1_CAN_ID

@@ -697,6 +697,13 @@ struct Property : public oe32trta::detail::Property {
     PROPERTY(EVU_Freigabe, 0x0074);
     PROPERTY(EVU_SPERRE, 0xabe1);
 
+    // Pumpenleistung
+    PROPERTY(PUMPENLEISTUNG_STANDBY, 0x4f8a);
+    PROPERTY(PUMPENLEISTUNG_HEIZEN, 0x4f8c);
+    PROPERTY(PUMPENLEISTUNG_WW, 0x4f8f);
+    PROPERTY(PUMPENLEISTUNG_KUEHLEN, 0x4f92);
+
+
 #endif
 
 

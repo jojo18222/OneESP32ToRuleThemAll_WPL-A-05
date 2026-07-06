@@ -126,7 +126,15 @@ std::optional<uint16_t> GetRawByType(const SimpleVariant& value, Type type) {
             if (!value.holds_alternative<float>()) {
                 return std::nullopt;
             }
-            return static_cast<uint16_t>(value.get<float>() * 10.0f);
+            float val = value.get<float>();
+            
+            // Sonderfall für das "Aus"-Flag der Stiebel-Anlagen
+            if (val == 32768.0f) {
+                return static_cast<uint16_t>(32768);
+            }
+            
+            // Normalfall für Werte wie 3.0K (wird zu 30)
+            return static_cast<uint16_t>(val * 10.0f);
         }
 
         case Type::et_cent_val: {

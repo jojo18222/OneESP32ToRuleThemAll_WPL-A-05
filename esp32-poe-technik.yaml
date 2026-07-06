@@ -29,9 +29,9 @@ ota:
 substitutions:
   timezone: "Europe/Berlin"
   can_bus_bit_rate: 50kbps
-  #espclient_can_id: 0x680 # normal can id if not emulate FET
-  espclient_can_id: 0x401 # this is the can id of the org. FET, needed to change RAUMISTTEMP and RAUMFEUCHTE
-  emulate_fet: "true" # if true, esp32 sends parameter like the org. FET
+  espclient_can_id: 0x680 # normal can id if not emulate FET
+  #espclient_can_id: 0x401 # this is the can id of the org. FET, needed to change RAUMISTTEMP and RAUMFEUCHTE
+  emulate_fet: "false" # if true, esp32 sends parameter like the org. FET
   api_reboot_timeout: 0s # default: 15min, set 0s if not using api
 
 external_components:
